@@ -1,6 +1,6 @@
 # Claude & ChatGPT Environmental Impact Analyzer
 
-Measure the environmental footprint of your AI conversations. This tool parses your `conversations.json` exports from Claude.ai or ChatGPT and estimates the energy consumption, CO₂ emissions (GHG), and water usage of every request using [EcoLogits](https://ecologits.ai/).
+Estimate the environmental footprint of your AI conversations. This tool parses your `conversations.json` exports from Claude.ai or ChatGPT and estimates the energy consumption, CO₂ emissions (GHG), and water usage of every request using [EcoLogits](https://ecologits.ai/).
 
 ## Features
 
