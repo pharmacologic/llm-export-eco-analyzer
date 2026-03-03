@@ -407,8 +407,21 @@ def _extract_claude_messages(conversation: dict) -> list[dict]:
         
         content_blocks = msg.get("content", [])
         for block in content_blocks:
-            if block.get("type") == "text":
+            btype = block.get("type")
+            if btype == "text":
                 text += block.get("text", "")
+            elif btype == "tool_use":
+                # Artifact/tool content lives in block["input"]
+                inp = block.get("input", {})
+                # For artifacts specifically, the code is in inp["content"]
+                text += inp.get("content", "")
+                # Also capture title, language, etc. if you want to be thorough
+            # elif btype == "tool_result":
+            #     for sub in block.get("content", []):
+            #         if sub.get("type") == "text":
+            #             text += sub.get("text", "")
+            elif btype == "thinking":
+                text += block.get("thinking", "")
                 # Try to extract latency from timestamps
                 try:
                     t0 = datetime.fromisoformat(
@@ -730,7 +743,7 @@ def equivalents(agg: AggImpact) -> list[str]:
     # GHG: gCO₂eq
     gco2 = agg.gwp_kgco2 * 1000
     if gco2 >= 0.1:
-        km_driven = gco2 / 0.2  # ~200 gCO₂eq per km (avg car)
+        km_driven = gco2 / 200  # ~200 gCO₂eq per km (avg car)
         tree_months = gco2 / 20  # ~20 gCO₂eq per month per mature tree
         items.append(f"{gco2:.1f} gCO₂eq — driving {km_driven:.1f} km or {tree_months:.1f} tree-months offset")
 
