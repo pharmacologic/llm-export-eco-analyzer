@@ -1,0 +1,1946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Environmental Impact Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e0a;
+    --surface: #111711;
+    --surface2: #182018;
+    --border: #2a382a;
+    --border2: #1e2a1e;
+    --accent: #4ade80;
+    --accent2: #86efac;
+    --accent-dim: #22543d;
+    --warn: #fbbf24;
+    --warn-dim: #451a03;
+    --muted: #6b8f6b;
+    --text: #e2f0e2;
+    --text2: #9ab89a;
+    --text3: #5a7a5a;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── NOISE TEXTURE ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.5;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── HEADER ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 28px 0 20px;
+    margin-bottom: 40px;
+  }
+
+  .header-inner {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .logo-mark {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .logo-mark svg { width: 20px; height: 20px; }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .header-sub {
+    font-size: 11px;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .header-badge {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--text3);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 100px;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── UPLOAD ZONE ── */
+  #upload-zone {
+    border: 1.5px dashed var(--border);
+    border-radius: 8px;
+    padding: 52px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #upload-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(74,222,128,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  #upload-zone:hover, #upload-zone.drag-over {
+    border-color: var(--accent);
+    background: #0f1a0f;
+  }
+
+  #upload-zone.drag-over { border-style: solid; }
+
+  .upload-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 16px;
+    color: var(--muted);
+  }
+
+  .upload-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .upload-sub {
+    color: var(--text3);
+    font-size: 12px;
+  }
+
+  .upload-sub span {
+    color: var(--accent2);
+    font-weight: 400;
+  }
+
+  #file-input { display: none; }
+
+  /* ── SETTINGS PANEL ── */
+  .settings-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 28px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px 24px;
+    align-items: end;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field-group label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+  }
+
+  .field-group input,
+  .field-group select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+
+  .field-group input:focus,
+  .field-group select:focus { border-color: var(--accent); }
+
+  .field-group select option { background: #111711; }
+
+  /* ── ANALYZE BUTTON ── */
+  .btn-analyze {
+    background: var(--accent);
+    color: #0a0e0a;
+    border: none;
+    border-radius: 4px;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 9px 24px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  .btn-analyze:hover { background: var(--accent2); }
+  .btn-analyze:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── PROGRESS ── */
+  #progress-section {
+    display: none;
+    margin-bottom: 28px;
+  }
+
+  .progress-bar-outer {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    height: 6px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+
+  .progress-bar-inner {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 100px;
+    transition: width 0.1s;
+    width: 0%;
+  }
+
+  .progress-label {
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  /* ── WARNINGS ── */
+  #warnings-section {
+    display: none;
+    background: rgba(251,191,36,0.06);
+    border: 1px solid rgba(251,191,36,0.2);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 11px;
+    color: var(--warn);
+    max-height: 160px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(251,191,36,0.3) transparent;
+  }
+  #warnings-section::-webkit-scrollbar { width: 4px; }
+  #warnings-section::-webkit-scrollbar-track { background: transparent; }
+  #warnings-section::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.3); border-radius: 2px; }
+
+  /* ── RESULTS ── */
+  #results-section { display: none; }
+
+  /* ── SUMMARY CARDS ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 36px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  .stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  .stat-unit {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 4px;
+  }
+
+  .stat-range {
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 4px;
+    font-style: italic;
+  }
+
+  /* ── EQUIVALENTS ── */
+  .equivalents-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 36px;
+  }
+
+  .equiv-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 100px;
+    padding: 6px 14px;
+    font-size: 11px;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .equiv-chip .equiv-num {
+    color: var(--accent2);
+    font-weight: 400;
+  }
+
+  /* ── SECTION HEADER ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border2);
+  }
+
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text2);
+  }
+
+  .section-controls {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  /* ── TABLES ── */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead tr {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    font-weight: 400;
+    white-space: nowrap;
+  }
+
+  th.sortable {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  th.sortable:hover { color: var(--text2); }
+
+  th.sort-asc::after { content: ' ↑'; color: var(--accent); }
+  th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+
+  th.num { text-align: right; }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border2);
+    transition: background 0.1s;
+  }
+
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+
+  td {
+    padding: 9px 14px;
+    font-size: 12px;
+    color: var(--text2);
+  }
+
+  td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  td.label {
+    color: var(--text);
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  td.accent { color: var(--accent2); }
+
+  .range-cell {
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 1px;
+    font-style: italic;
+  }
+
+  /* ── SORT/FILTER CONTROLS ── */
+  .ctrl-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text3);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .ctrl-btn:hover, .ctrl-btn.active {
+    border-color: var(--accent-dim);
+    color: var(--accent2);
+    background: rgba(74,222,128,0.07);
+  }
+
+  .ctrl-select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text3);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 4px 8px;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .ctrl-select option { background: #111711; }
+
+  /* ── PAGINATION ── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border2);
+    background: var(--surface);
+  }
+
+  .page-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text3);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 9px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .page-btn:hover { border-color: var(--accent-dim); color: var(--accent2); }
+  .page-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .page-info {
+    font-size: 11px;
+    color: var(--text3);
+    margin: 0 4px;
+  }
+
+  .page-size-ctrl {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  /* ── WARN BADGE ── */
+  .warn-badge {
+    display: inline-block;
+    background: rgba(251,191,36,0.12);
+    border: 1px solid rgba(251,191,36,0.25);
+    color: var(--warn);
+    border-radius: 3px;
+    font-size: 9px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    letter-spacing: 0.05em;
+    vertical-align: middle;
+  }
+
+  /* ── EXPORT BTN ── */
+  .export-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text3);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+
+  .export-btn:hover { border-color: var(--accent-dim); color: var(--accent2); }
+
+  /* ── RESET LINK ── */
+  .reset-link {
+    color: var(--text3);
+    font-size: 11px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--border);
+    transition: color 0.15s;
+  }
+
+  .reset-link:hover { color: var(--red); }
+
+  /* ── METHODOLOGY NOTE ── */
+  .methodology-note {
+    margin-top: 40px;
+    padding: 16px 20px;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 11px;
+    color: var(--text3);
+    line-height: 1.8;
+  }
+
+  .methodology-note a { color: var(--accent2); text-decoration: none; }
+  .methodology-note a:hover { text-decoration: underline; }
+
+  /* ── ERROR ── */
+  .error-box {
+    background: rgba(248,113,113,0.07);
+    border: 1px solid rgba(248,113,113,0.3);
+    border-radius: 6px;
+    padding: 14px 18px;
+    color: var(--red);
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+
+  /* ── PRIVACY BADGE ── */
+  .privacy-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 12px;
+  }
+
+  .privacy-note svg { color: var(--accent); flex-shrink: 0; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 640px) {
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .settings-panel { grid-template-columns: 1fr; }
+    .stat-value { font-size: 20px; }
+    td.label { max-width: 140px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <header>
+    <div class="header-inner">
+      <div class="logo-mark">
+        <svg viewBox="0 0 20 20" fill="none" stroke="#0a0e0a" stroke-width="1.8" stroke-linecap="round">
+          <path d="M10 2 L10 6 M10 14 L10 18 M2 10 L6 10 M14 10 L18 10"/>
+          <circle cx="10" cy="10" r="4"/>
+          <circle cx="10" cy="10" r="7" stroke-dasharray="2 3"/>
+        </svg>
+      </div>
+      <div>
+        <h1>LLM Environmental Impact Analyzer</h1>
+        <div class="header-sub">Claude.ai &amp; ChatGPT · Powered by EcoLogits methodology</div>
+      </div>
+      <div class="header-badge">100% client-side · no data uploaded</div>
+    </div>
+  </header>
+
+  <div id="error-box" class="error-box" style="display:none"></div>
+
+  <!-- UPLOAD -->
+  <div id="upload-zone">
+    <div class="upload-icon">
+      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 36 L8 40 Q8 42 10 42 L38 42 Q40 42 40 40 L40 36"/>
+        <path d="M24 6 L24 32 M16 14 L24 6 L32 14"/>
+      </svg>
+    </div>
+    <div class="upload-title">Drop your conversations.json here</div>
+    <div class="upload-sub">or <span>click to browse</span> · Claude.ai and ChatGPT exports both supported</div>
+    <input type="file" id="file-input" accept=".json">
+  </div>
+
+  <div class="privacy-note">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M7 1 L2 3.5 L2 7 Q2 11 7 13 Q12 11 12 7 L12 3.5 Z"/>
+    </svg>
+    Your conversation data never leaves your device. All processing happens locally in your browser.
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="settings-panel" id="settings-panel" style="margin-top:24px">
+    <div class="field-group">
+      <label>Electricity Zone</label>
+      <select id="zone-select">
+        <option value="WOR">🌍 World average (default)</option>
+        <option value="ARG">🇦🇷 Argentina</option>
+        <option value="AUS">🇦🇺 Australia</option>
+        <option value="AUT">🇦🇹 Austria</option>
+        <option value="BEL">🇧🇪 Belgium</option>
+        <option value="BGR">🇧🇬 Bulgaria</option>
+        <option value="BRA">🇧🇷 Brazil</option>
+        <option value="CAN">🇨🇦 Canada</option>
+        <option value="CHE">🇨🇭 Switzerland</option>
+        <option value="CHL">🇨🇱 Chile</option>
+        <option value="CHN">🇨🇳 China</option>
+        <option value="CYP">🇨🇾 Cyprus</option>
+        <option value="CZE">🇨🇿 Czech Republic</option>
+        <option value="DEU">🇩🇪 Germany</option>
+        <option value="DNK">🇩🇰 Denmark</option>
+        <option value="ESP">🇪🇸 Spain</option>
+        <option value="EST">🇪🇪 Estonia</option>
+        <option value="FIN">🇫🇮 Finland</option>
+        <option value="FRA">🇫🇷 France</option>
+        <option value="GBR">🇬🇧 United Kingdom</option>
+        <option value="GRC">🇬🇷 Greece</option>
+        <option value="HUN">🇭🇺 Hungary</option>
+        <option value="IDN">🇮🇩 Indonesia</option>
+        <option value="IND">🇮🇳 India</option>
+        <option value="IRL">🇮🇪 Ireland</option>
+        <option value="ISL">🇮🇸 Iceland</option>
+        <option value="ITA">🇮🇹 Italy</option>
+        <option value="JPN">🇯🇵 Japan</option>
+        <option value="KOR">🇰🇷 South Korea</option>
+        <option value="LTU">🇱🇹 Lithuania</option>
+        <option value="LUX">🇱🇺 Luxembourg</option>
+        <option value="LVA">🇱🇻 Latvia</option>
+        <option value="MEX">🇲🇽 Mexico</option>
+        <option value="MLT">🇲🇹 Malta</option>
+        <option value="MYS">🇲🇾 Malaysia</option>
+        <option value="NLD">🇳🇱 Netherlands</option>
+        <option value="NOR">🇳🇴 Norway</option>
+        <option value="NZL">🇳🇿 New Zealand</option>
+        <option value="POL">🇵🇱 Poland</option>
+        <option value="PRT">🇵🇹 Portugal</option>
+        <option value="ROU">🇷🇴 Romania</option>
+        <option value="RUS">🇷🇺 Russia</option>
+        <option value="SVK">🇸🇰 Slovakia</option>
+        <option value="SVN">🇸🇮 Slovenia</option>
+        <option value="SWE">🇸🇪 Sweden</option>
+        <option value="THA">🇹🇭 Thailand</option>
+        <option value="TUR">🇹🇷 Turkey</option>
+        <option value="TWN">🇹🇼 Taiwan</option>
+        <option value="UKR">🇺🇦 Ukraine</option>
+        <option value="USA">🇺🇸 United States</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label>Fallback Model Override</label>
+      <input type="text" id="model-override" placeholder="e.g. claude-sonnet-4-20250514" spellcheck="false">
+    </div>
+    <div class="field-group">
+      <label>Default Latency (seconds)</label>
+      <input type="number" id="default-latency" value="30" min="1" max="300" step="1">
+    </div>
+    <div class="field-group" style="justify-content:flex-end">
+      <button class="btn-analyze" id="analyze-btn" disabled>Analyze File</button>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div id="progress-section">
+    <div class="progress-bar-outer">
+      <div class="progress-bar-inner" id="progress-bar"></div>
+    </div>
+    <div class="progress-label" id="progress-label">Initializing…</div>
+  </div>
+
+  <!-- WARNINGS -->
+  <div id="warnings-section"></div>
+
+  <!-- RESULTS -->
+  <div id="results-section">
+
+    <!-- SUMMARY CARDS -->
+    <div class="summary-grid" id="summary-cards"></div>
+
+    <!-- EQUIVALENTS -->
+    <div class="equivalents-row" id="equivalents-row"></div>
+
+    <!-- BY MODEL -->
+    <div class="section-header">
+      <div class="section-title">By Model</div>
+      <div class="section-controls">
+        <button class="ctrl-btn" data-table="model" data-sort="gwp" data-dir="desc">Sort by Impact</button>
+        <button class="ctrl-btn" id="export-json-btn" class="export-btn">↓ Export JSON</button>
+        <span class="reset-link" id="reset-link">Reset</span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="model-table">
+        <thead><tr>
+          <th class="sortable" data-col="name">Model</th>
+          <th class="sortable num" data-col="requests">Requests</th>
+          <th class="sortable num" data-col="tokens">Output Tokens</th>
+          <th class="sortable num" data-col="energy">Energy</th>
+          <th class="sortable num" data-col="gwp">GHG Emissions</th>
+          <th class="sortable num" data-col="water">Water</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- BY MONTH -->
+    <div class="section-header">
+      <div class="section-title">By Month</div>
+      <div class="section-controls">
+        <button class="ctrl-btn active" data-table="month" data-sort="date" data-dir="desc">Chronological</button>
+        <button class="ctrl-btn" data-table="month" data-sort="gwp" data-dir="desc">By Impact</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="month-table">
+        <thead><tr>
+          <th class="sortable" data-col="name">Month</th>
+          <th class="sortable num" data-col="requests">Requests</th>
+          <th class="sortable num" data-col="tokens">Output Tokens</th>
+          <th class="sortable num" data-col="energy">Energy</th>
+          <th class="sortable num" data-col="gwp">GHG Emissions</th>
+          <th class="sortable num" data-col="water">Water</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- BY WEEK -->
+    <div class="section-header">
+      <div class="section-title">By Week</div>
+      <div class="section-controls">
+        <button class="ctrl-btn active" data-table="week" data-sort="date" data-dir="desc">Chronological</button>
+        <button class="ctrl-btn" data-table="week" data-sort="gwp" data-dir="desc">By Impact</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="week-table">
+        <thead><tr>
+          <th class="sortable" data-col="name">ISO Week</th>
+          <th class="sortable num" data-col="requests">Requests</th>
+          <th class="sortable num" data-col="tokens">Output Tokens</th>
+          <th class="sortable num" data-col="energy">Energy</th>
+          <th class="sortable num" data-col="gwp">GHG Emissions</th>
+          <th class="sortable num" data-col="water">Water</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- BY CONVERSATION -->
+    <div class="section-header">
+      <div class="section-title">By Conversation</div>
+      <div class="section-controls">
+        <button class="ctrl-btn" data-table="conv" data-sort="date" data-dir="desc">Chronological</button>
+        <button class="ctrl-btn active" data-table="conv" data-sort="gwp" data-dir="desc">By Impact</button>
+        <select class="ctrl-select" id="conv-page-size">
+          <option value="20">20 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+          <option value="0">All</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="conv-table">
+        <thead><tr>
+          <th class="sortable" data-col="name">Conversation</th>
+          <th class="sortable num" data-col="requests">Requests</th>
+          <th class="sortable num" data-col="tokens">Output Tokens</th>
+          <th class="sortable num" data-col="energy">Energy</th>
+          <th class="sortable num" data-col="gwp">GHG Emissions</th>
+          <th class="sortable num" data-col="water">Water</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="pagination" id="conv-pagination"></div>
+    </div>
+
+    <div class="methodology-note">
+      <strong>Methodology:</strong> Calculations use the <a href="https://ecologits.ai/methodology" target="_blank">EcoLogits</a> impact model.
+      Energy estimates include GPU inference + server overhead. Embodied impacts cover hardware manufacturing proportional to usage time.
+      Ranges reflect uncertainty in undisclosed model architectures. Token counts use a characters ÷ 4 approximation (close to tiktoken cl100k_base for prose; may vary for code-heavy conversations).
+      Input tokens are not included in energy estimates. Latency is estimated from message timestamps.
+      This tool is for awareness and comparison — not forensic auditing.
+    </div>
+
+  </div><!-- /results -->
+
+</div><!-- /container -->
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// EMBEDDED DATA
+// ═══════════════════════════════════════════════════════════════════
+
+const MODELS_DATA = 
+{"models":[{"type":"model","provider":"anthropic","name":"claude-3-5-haiku-20241022","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-3-5-haiku-latest","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-3-7-sonnet-20250219","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-3-7-sonnet-latest","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-3-haiku-20240307","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-opus-4-1-20250805","architecture":{"type":"moe","parameters":{"total":2000,"active":{"min":200,"max":600}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-opus-4-20250514","architecture":{"type":"moe","parameters":{"total":2000,"active":{"min":200,"max":600}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-sonnet-4-20250514","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-sonnet-4-5-20250929","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-sonnet-4-6","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-haiku-4-5-20251001","architecture":{"type":"dense","parameters":{"min":10,"max":35}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-opus-4-5-20251101","architecture":{"type":"moe","parameters":{"total":670,"active":{"min":67,"max":200}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"anthropic","name":"claude-opus-4-6","architecture":{"type":"moe","parameters":{"total":670,"active":{"min":67,"max":200}}},"warnings":["model-arch-not-released"],"sources":["https://docs.anthropic.com/en/docs/about-claude/models"]},{"type":"model","provider":"openai","name":"chatgpt-4o-latest","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-3.5-turbo","architecture":{"type":"dense","parameters":{"min":20,"max":70}},"warnings":["model-arch-not-released"],"sources":["https://platform.openai.com/docs/models#gpt-3-5-turbo"]},{"type":"model","provider":"openai","name":"gpt-3.5-turbo-0125","architecture":{"type":"dense","parameters":{"min":20,"max":70}},"warnings":["model-arch-not-released"],"sources":["https://platform.openai.com/docs/models#gpt-3-5-turbo"]},{"type":"model","provider":"openai","name":"gpt-3.5-turbo-1106","architecture":{"type":"dense","parameters":{"min":20,"max":70}},"warnings":["model-arch-not-released"],"sources":["https://platform.openai.com/docs/models#gpt-3-5-turbo"]},{"type":"model","provider":"openai","name":"gpt-3.5-turbo-16k","architecture":{"type":"dense","parameters":{"min":20,"max":70}},"warnings":["model-arch-not-released"],"sources":["https://platform.openai.com/docs/models#gpt-3-5-turbo"]},{"type":"model","provider":"openai","name":"gpt-3.5-turbo-instruct","architecture":{"type":"dense","parameters":{"min":20,"max":70}},"warnings":["model-arch-not-released"],"sources":["https://platform.openai.com/docs/models#gpt-3-5-turbo"]},{"type":"model","provider":"openai","name":"gpt-3.5-turbo-instruct-0914","architecture":{"type":"dense","parameters":{"min":20,"max":70}},"warnings":["model-arch-not-released"],"sources":["https://platform.openai.com/docs/models#gpt-3-5-turbo"]},{"type":"model","provider":"openai","name":"gpt-4","architecture":{"type":"moe","parameters":{"total":1760,"active":{"min":176,"max":528}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4"]},{"type":"model","provider":"openai","name":"gpt-4-0125-preview","architecture":{"type":"moe","parameters":{"total":1760,"active":{"min":176,"max":528}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4"]},{"type":"model","provider":"openai","name":"gpt-4-0613","architecture":{"type":"moe","parameters":{"total":1760,"active":{"min":176,"max":528}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4"]},{"type":"model","provider":"openai","name":"gpt-4-1106-preview","architecture":{"type":"moe","parameters":{"total":1760,"active":{"min":176,"max":528}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4"]},{"type":"model","provider":"openai","name":"gpt-4-turbo","architecture":{"type":"moe","parameters":{"total":880,"active":{"min":88,"max":264}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4"]},{"type":"model","provider":"openai","name":"gpt-4-turbo-2024-04-09","architecture":{"type":"moe","parameters":{"total":880,"active":{"min":88,"max":264}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4"]},{"type":"model","provider":"openai","name":"gpt-4-turbo-preview","architecture":{"type":"moe","parameters":{"total":880,"active":{"min":88,"max":264}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4"]},{"type":"model","provider":"openai","name":"gpt-4.1","architecture":{"type":"moe","parameters":{"total":352,"active":{"min":35,"max":106}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-4.1-2025-04-14","architecture":{"type":"moe","parameters":{"total":352,"active":{"min":35,"max":106}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-4.1-mini","architecture":{"type":"dense","parameters":{"min":40,"max":112}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-4.1-mini-2025-04-14","architecture":{"type":"dense","parameters":{"min":40,"max":112}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-4.1-nano","architecture":{"type":"dense","parameters":{"min":10,"max":37}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-4.1-nano-2025-04-14","architecture":{"type":"dense","parameters":{"min":10,"max":37}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-4o","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-2024-05-13","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-2024-08-06","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-2024-11-20","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-audio-preview","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-audio-preview-2024-12-17","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-audio-preview-2025-06-03","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-mini","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-2024-07-18","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-audio-preview","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-realtime-preview","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-realtime-preview-2024-12-17","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-search-preview","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-search-preview-2025-03-11","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-transcribe","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-transcribe-2025-03-20","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-transcribe-2025-12-15","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-tts","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-tts-2025-03-20","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-tts-2025-12-15","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-mini-audio-preview-2024-12-17","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o-mini"]},{"type":"model","provider":"openai","name":"gpt-4o-realtime-preview","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-realtime-preview-2024-12-17","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-realtime-preview-2025-06-03","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-search-preview","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-4o-search-preview-2025-03-11","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#gpt-4o"]},{"type":"model","provider":"openai","name":"gpt-5","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-2025-08-07","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-chat-latest","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-codex","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-mini","architecture":{"type":"dense","parameters":{"min":25,"max":70}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-mini-2025-08-07","architecture":{"type":"dense","parameters":{"min":25,"max":70}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-nano","architecture":{"type":"dense","parameters":{"min":5,"max":18.5}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-nano-2025-08-07","architecture":{"type":"dense","parameters":{"min":5,"max":18.5}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-pro","architecture":{"type":"moe","parameters":{"total":3600,"active":{"min":360,"max":1080}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-pro-2025-10-06","architecture":{"type":"moe","parameters":{"total":3600,"active":{"min":360,"max":1080}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-search-api","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5-search-api-2025-10-14","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.1","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.1-2025-11-13","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.1-chat-latest","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.1-codex","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.1-codex-max","architecture":{"type":"moe","parameters":{"total":300,"active":{"min":30,"max":90}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.1-codex-mini","architecture":{"type":"dense","parameters":{"min":25,"max":70}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.2","architecture":{"type":"moe","parameters":{"total":420,"active":{"min":42,"max":126}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.2-2025-12-11","architecture":{"type":"moe","parameters":{"total":420,"active":{"min":42,"max":126}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.2-chat-latest","architecture":{"type":"moe","parameters":{"total":420,"active":{"min":42,"max":126}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.2-codex","architecture":{"type":"moe","parameters":{"total":420,"active":{"min":42,"max":126}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.2-pro","architecture":{"type":"moe","parameters":{"total":5040,"active":{"min":504,"max":1512}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"gpt-5.2-pro-2025-12-11","architecture":{"type":"moe","parameters":{"total":5040,"active":{"min":504,"max":1512}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models"]},{"type":"model","provider":"openai","name":"o1","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#o1"]},{"type":"model","provider":"openai","name":"o1-2024-12-17","architecture":{"type":"moe","parameters":{"total":440,"active":{"min":44,"max":132}}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#o1"]},{"type":"model","provider":"openai","name":"o3-mini","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#o3-mini"]},{"type":"model","provider":"openai","name":"o3-mini-2025-01-31","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#o3-mini"]},{"type":"model","provider":"openai","name":"o4-mini","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#o3-mini"]},{"type":"model","provider":"openai","name":"o4-mini-2025-04-16","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#o3-mini"]},{"type":"model","provider":"openai","name":"o4-mini-deep-research","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#o3-mini"]},{"type":"model","provider":"openai","name":"o4-mini-deep-research-2025-06-26","architecture":{"type":"dense","parameters":{"min":8,"max":28}},"warnings":["model-arch-not-released","model-arch-multimodal"],"sources":["https://platform.openai.com/docs/models#o3-mini"]}],"aliases":[{"type":"alias","provider":"anthropic","name":"claude-opus-4-1","alias":"claude-opus-4-1-20250805"},{"type":"alias","provider":"anthropic","name":"claude-opus-4-0","alias":"claude-opus-4-20250514"},{"type":"alias","provider":"anthropic","name":"claude-sonnet-4-0","alias":"claude-sonnet-4-20250514"},{"type":"alias","provider":"anthropic","name":"claude-haiku-4-5","alias":"claude-haiku-4-5-20251001"},{"type":"alias","provider":"anthropic","name":"claude-sonnet-4-5","alias":"claude-sonnet-4-5-20250929"},{"type":"alias","provider":"anthropic","name":"claude-opus-4-5","alias":"claude-opus-4-5-20251101"},{"type":"alias","provider":"openai","name":"gpt-35-turbo","alias":"gpt-3.5-turbo"},{"type":"alias","provider":"openai","name":"gpt-35-turbo-0125","alias":"gpt-3.5-turbo-0125"},{"type":"alias","provider":"openai","name":"gpt-35-turbo-1106","alias":"gpt-3.5-turbo-1106"},{"type":"alias","provider":"openai","name":"gpt-35-turbo-16k","alias":"gpt-3.5-turbo-16k"},{"type":"alias","provider":"openai","name":"gpt-35-turbo-instruct-0914","alias":"gpt-3.5-turbo-instruct-0914"},{"type":"alias","provider":"openai","name":"gpt-35-turbo-instruct","alias":"gpt-3.5-turbo-instruct"}]}
+;
+const ELECTRICITY_MIXES = 
+{"ARG":{"gwp":0.35895,"adpe":7.686e-08,"pe":7.8888,"wue":11.4558},"AUS":{"gwp":0.55159,"adpe":7.908e-08,"pe":12.2247,"wue":4.7293},"AUT":{"gwp":0.10262,"adpe":1.4112e-07,"pe":2.8363,"wue":5.7222},"BEL":{"gwp":0.11758,"adpe":3.372e-08,"pe":8.9876,"wue":2.6198},"BGR":{"gwp":0.26421,"adpe":8.236e-08,"pe":12.118,"wue":4.6228},"BRA":{"gwp":0.10321,"adpe":1.0962e-07,"pe":1.7701,"wue":18.6033},"CAN":{"gwp":0.17481,"adpe":9.932e-08,"pe":4.1955,"wue":8.1662},"CHE":{"gwp":0.0366,"adpe":1.0047e-07,"pe":4.7362,"wue":5.6641},"CHL":{"gwp":0.26552,"adpe":1.0585e-07,"pe":6.434,"wue":10.5226},"CHN":{"gwp":0.55955,"adpe":8.516e-08,"pe":10.6736,"wue":6.0065},"CYP":{"gwp":0.51224,"adpe":4.488e-08,"pe":11.9763,"wue":1.2947},"CZE":{"gwp":0.41386,"adpe":8.176e-08,"pe":11.103,"wue":3.2133},"DEU":{"gwp":0.34414,"adpe":8.787e-08,"pe":8.7477,"wue":1.947},"DNK":{"gwp":0.1433,"adpe":1.574e-08,"pe":6.6454,"wue":3.1935},"ESP":{"gwp":0.14615,"adpe":5.183e-08,"pe":7.4839,"wue":6.2088},"EST":{"gwp":0.34102,"adpe":9.902e-08,"pe":14.2926,"wue":2.1986},"FIN":{"gwp":0.07225,"adpe":8.051e-08,"pe":6.2915,"wue":4.5289},"FRA":{"gwp":0.04418,"adpe":4.858e-08,"pe":9.3135,"wue":3.6737},"GBR":{"gwp":0.21089,"adpe":3.71e-08,"pe":9.0976,"wue":2.329},"GRC":{"gwp":0.31976,"adpe":6.916e-08,"pe":10.5179,"wue":5.1451},"HUN":{"gwp":0.18282,"adpe":6.446e-08,"pe":10.5942,"wue":3.6874},"IDN":{"gwp":0.68243,"adpe":6.105e-08,"pe":9.7582,"wue":2.2554},"IND":{"gwp":0.70832,"adpe":1.001e-07,"pe":16.6775,"wue":3.4368},"IRL":{"gwp":0.2797,"adpe":2.193e-08,"pe":8.0614,"wue":1.4769},"ISL":{"gwp":0.02833,"adpe":7.819e-08,"pe":0.0128,"wue":6.1409},"ITA":{"gwp":0.28753,"adpe":5.439e-08,"pe":7.9351,"wue":4.8374},"JPN":{"gwp":0.48232,"adpe":5.966e-08,"pe":9.1105,"wue":2.3063},"KOR":{"gwp":0.41427,"adpe":5.18e-08,"pe":9.9136,"wue":1.8877},"LTU":{"gwp":0.13934,"adpe":2.946e-08,"pe":10.6476,"wue":5.8994},"LUX":{"gwp":0.13462,"adpe":1.0569e-07,"pe":8.0213,"wue":12.7784},"LVA":{"gwp":0.13622,"adpe":1.5376e-07,"pe":3.7781,"wue":2.5526},"MEX":{"gwp":0.48483,"adpe":5.784e-08,"pe":9.9732,"wue":5.3047},"MLT":{"gwp":0.48416,"adpe":4.948e-08,"pe":16.3514,"wue":1.1185},"MYS":{"gwp":0.60443,"adpe":4.494e-08,"pe":10.5875,"wue":1.6778},"NLD":{"gwp":0.25331,"adpe":3.293e-08,"pe":7.4815,"wue":3.433},"NOR":{"gwp":0.03075,"adpe":1.2749e-07,"pe":0.1386,"wue":6.6633},"NZL":{"gwp":0.12011,"adpe":7.205e-08,"pe":3.9817,"wue":14.9681},"POL":{"gwp":0.61498,"adpe":1.0195e-07,"pe":11.1352,"wue":2.5135},"PRT":{"gwp":0.11229,"adpe":3.419e-08,"pe":6.5813,"wue":9.5932},"ROU":{"gwp":0.24555,"adpe":9.818e-08,"pe":9.1329,"wue":7.3563},"RUS":{"gwp":0.4492,"adpe":9.603e-08,"pe":10.9691,"wue":3.4595},"SVK":{"gwp":0.09649,"adpe":6.061e-08,"pe":8.8184,"wue":5.7952},"SVN":{"gwp":0.22765,"adpe":9.923e-08,"pe":8.4293,"wue":2.9769},"SWE":{"gwp":0.03582,"adpe":7.771e-08,"pe":4.7301,"wue":6.0315},"THA":{"gwp":0.5545,"adpe":5.696e-08,"pe":9.0495,"wue":2.8902},"TUR":{"gwp":0.4697,"adpe":7.498e-08,"pe":8.7855,"wue":4.9197},"TWN":{"gwp":0.63565,"adpe":5.781e-08,"pe":10.9587,"wue":1.4886},"UKR":{"gwp":0.25621,"adpe":6.479e-08,"pe":12.2117,"wue":2.1306},"USA":{"gwp":0.38355,"adpe":9.855e-08,"pe":9.6884,"wue":3.1321},"WOR":{"gwp":0.47301,"adpe":1.349e-08,"pe":2.5871,"wue":3.908}}
+;
+
+// ═══════════════════════════════════════════════════════════════════
+// CONSTANTS (from ecologits llm.py)
+// ═══════════════════════════════════════════════════════════════════
+
+const GPU_ENERGY_ALPHA = 1.1665273170451914e-06;
+const GPU_ENERGY_BETA  = -0.011205921025579175;
+const GPU_ENERGY_GAMMA = 4.052928146734005e-05;
+const LATENCY_ALPHA    = 0.0006785088094353663;
+const LATENCY_BETA     = 0.0003119310311688259;
+const LATENCY_GAMMA    = 0.019473717579473387;
+const GPU_MEMORY           = 80;  // GB
+const GPU_EMBODIED_GWP     = 164;
+const GPU_EMBODIED_ADPE    = 5.1e-3;
+const GPU_EMBODIED_PE      = 1828;
+const SERVER_GPUS          = 8;
+const SERVER_POWER         = 1.2;   // kW
+const SERVER_EMBODIED_GWP  = 5700;
+const SERVER_EMBODIED_ADPE = 0.37;
+const SERVER_EMBODIED_PE   = 70000;
+const HARDWARE_LIFESPAN    = 3 * 365 * 24 * 60 * 60; // seconds
+const BATCH_SIZE           = 64;
+const MODEL_QUANT_BITS     = 16;
+const DATACENTER_PUE       = 1.2;
+const DATACENTER_WUE       = 0.0;
+const DEFAULT_LATENCY_SECS = 30.0;
+
+// ═══════════════════════════════════════════════════════════════════
+// MODEL REGISTRY
+// ═══════════════════════════════════════════════════════════════════
+
+class Range { constructor(min, max) { this.min = min; this.max = max; } }
+
+function buildModelRegistry() {
+  const registry = new Map();
+
+  // Build alias map first
+  const aliasMap = new Map();
+  for (const alias of (MODELS_DATA.aliases || [])) {
+    aliasMap.set(`${alias.provider}::${alias.name}`, `${alias.provider}::${alias.alias}`);
+  }
+
+  for (const m of (MODELS_DATA.models || [])) {
+    const key = `${m.provider}::${m.name}`;
+    registry.set(key, m);
+  }
+
+  // Expand aliases into the registry
+  for (const [aliasKey, targetKey] of aliasMap) {
+    if (registry.has(targetKey) && !registry.has(aliasKey)) {
+      registry.set(aliasKey, registry.get(targetKey));
+    }
+  }
+
+  return registry;
+}
+
+const MODEL_REGISTRY = buildModelRegistry();
+
+function getModelParams(provider, modelName) {
+  // Try exact match
+  let m = MODEL_REGISTRY.get(`${provider}::${modelName}`);
+  if (!m) {
+    // Try case-insensitive
+    for (const [k, v] of MODEL_REGISTRY) {
+      if (k.toLowerCase() === `${provider}::${modelName}`.toLowerCase()) {
+        m = v; break;
+      }
+    }
+  }
+  if (!m) return null;
+
+  const arch = m.architecture;
+  let activeParams, totalParams;
+
+  if (arch.type === 'dense') {
+    const p = arch.parameters;
+    if (typeof p === 'number') {
+      activeParams = totalParams = p;
+    } else if (p && typeof p.min !== 'undefined') {
+      activeParams = new Range(p.min, p.max);
+      totalParams  = new Range(p.min, p.max);
+    } else { return null; }
+  } else if (arch.type === 'moe') {
+    const p = arch.parameters;
+    // total can be a number or range
+    const tot = p.total;
+    const act = p.active;
+    totalParams  = (typeof tot === 'number') ? tot : new Range(tot.min, tot.max);
+    if (act && typeof act.min !== 'undefined') {
+      activeParams = new Range(act.min, act.max);
+    } else {
+      activeParams = totalParams;
+    }
+  } else { return null; }
+
+  return { activeParams, totalParams, warnings: m.warnings || [], provider: m.provider };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ECOLOGITS MATH (port of llm.py)
+// ═══════════════════════════════════════════════════════════════════
+
+// Range arithmetic helpers
+function rangeAdd(a, b) {
+  if (a instanceof Range && b instanceof Range) return new Range(a.min+b.min, a.max+b.max);
+  if (a instanceof Range) return new Range(a.min+b, a.max+b);
+  if (b instanceof Range) return new Range(a+b.min, a+b.max);
+  return a + b;
+}
+function rangeMul(a, b) {
+  if (a instanceof Range && b instanceof Range) return new Range(a.min*b.min, a.max*b.max);
+  if (a instanceof Range) return new Range(a.min*b, a.max*b);
+  if (b instanceof Range) return new Range(a*b.min, a*b.max);
+  return a * b;
+}
+function rangeDiv(a, b) {
+  if (a instanceof Range) return new Range(a.min/b, a.max/b);
+  return a / b;
+}
+function mid(v) { return (v instanceof Range) ? (v.min+v.max)/2 : (v||0); }
+function lo(v)  { return (v instanceof Range) ? v.min : (v||0); }
+function hi(v)  { return (v instanceof Range) ? v.max : (v||0); }
+
+function computeImpactsSingle(activeParam, totalParam, outputTokens, requestLatency, elecMix) {
+  // GPU energy (kWh)
+  const gpuEnergyPerToken = (GPU_ENERGY_ALPHA * Math.exp(GPU_ENERGY_BETA * BATCH_SIZE) * activeParam + GPU_ENERGY_GAMMA) / 1000;
+  const gpuEnergy = outputTokens * gpuEnergyPerToken;
+
+  // Latency
+  const latencyPerToken = LATENCY_ALPHA * activeParam + LATENCY_BETA * BATCH_SIZE + LATENCY_GAMMA;
+  const gpuLatency = outputTokens * latencyPerToken;
+  const genLatency = Math.min(requestLatency, gpuLatency);
+
+  // Memory + GPU count
+  const modelMem = 1.2 * totalParam * MODEL_QUANT_BITS / 8;
+  const gpuCount = Math.pow(2, Math.ceil(Math.log2(Math.max(1, Math.ceil(modelMem / GPU_MEMORY)))));
+
+  // Server energy
+  const serverEnergy = (genLatency / 3600) * SERVER_POWER * (gpuCount / SERVER_GPUS) * (1 / BATCH_SIZE);
+
+  // Request energy
+  const reqEnergy = DATACENTER_PUE * (serverEnergy + gpuCount * gpuEnergy);
+
+  // Usage impacts
+  const usageGwp  = reqEnergy * elecMix.gwp;
+  const usageAdpe = reqEnergy * elecMix.adpe;
+  const usagePe   = reqEnergy * elecMix.pe;
+  const usageWcf  = reqEnergy * (DATACENTER_WUE + DATACENTER_PUE * elecMix.wue);
+
+  // Embodied impacts
+  const sgEmbGwp  = (gpuCount / SERVER_GPUS) * SERVER_EMBODIED_GWP  + gpuCount * GPU_EMBODIED_GWP;
+  const sgEmbAdpe = (gpuCount / SERVER_GPUS) * SERVER_EMBODIED_ADPE + gpuCount * GPU_EMBODIED_ADPE;
+  const sgEmbPe   = (gpuCount / SERVER_GPUS) * SERVER_EMBODIED_PE   + gpuCount * GPU_EMBODIED_PE;
+
+  const embGwp  = genLatency * sgEmbGwp  / (HARDWARE_LIFESPAN * BATCH_SIZE);
+  const embAdpe = genLatency * sgEmbAdpe / (HARDWARE_LIFESPAN * BATCH_SIZE);
+  const embPe   = genLatency * sgEmbPe   / (HARDWARE_LIFESPAN * BATCH_SIZE);
+
+  return {
+    energy: reqEnergy,
+    gwp:    usageGwp  + embGwp,
+    adpe:   usageAdpe + embAdpe,
+    pe:     usagePe   + embPe,
+    wcf:    usageWcf,
+  };
+}
+
+function computeImpacts(activeParam, totalParam, outputTokens, requestLatency, elecMix) {
+  // Handle Range params by computing min and max separately
+  const activeParams = activeParam instanceof Range ? [activeParam.min, activeParam.max] : [activeParam];
+  const totalParams  = totalParam  instanceof Range ? [totalParam.min,  totalParam.max]  : [totalParam];
+
+  let results = null;
+  const pairs = activeParams.map((a,i) => [a, totalParams[Math.min(i, totalParams.length-1)]]);
+
+  for (let i = 0; i < pairs.length; i++) {
+    const [ap, tp] = pairs[i];
+    const r = computeImpactsSingle(ap, tp, outputTokens, requestLatency, elecMix);
+
+    if (results === null) {
+      results = r;
+    } else {
+      // Turn into ranges
+      for (const k of Object.keys(r)) {
+        const prev = results[k];
+        const curr = r[k];
+        results[k] = new Range(Math.min(lo(prev), lo(curr)), Math.max(hi(prev), hi(curr)));
+      }
+    }
+  }
+
+  return results;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CONVERSATION PARSING
+// ═══════════════════════════════════════════════════════════════════
+
+const CLAUDE_MODEL_MAP = {
+  'claude-opus-4-5':      'claude-opus-4-5-20251101',
+  'claude-opus-4-1':      'claude-opus-4-1-20250805',
+  'claude-sonnet-4-5':    'claude-sonnet-4-5-20250929',
+  'claude-sonnet-4':      'claude-sonnet-4-20250514',
+  'claude-haiku-4-5':     'claude-haiku-4-5-20251001',
+  'claude-3-7-sonnet':    'claude-3-7-sonnet-20250219',
+  'claude-3-5-sonnet':    'claude-3-5-sonnet-20241022',
+  'claude-3-5-haiku':     'claude-3-5-haiku-20241022',
+  'claude-3-opus':        'claude-opus-3-20240229',
+  'claude-3-sonnet':      'claude-sonnet-3-20240229',
+  'claude-3-haiku':       'claude-haiku-3-20240307',
+  'claude-2.1':           'claude-2-1',
+  'claude-2.0':           'claude-2-0',
+  'claude-instant-1.2':   'claude-instant-1-2',
+};
+
+const CHATGPT_MODEL_MAP = {
+  'gpt-4o':                              'gpt-4o',
+  'gpt-4o-2024-05-13':                   'gpt-4o',
+  'gpt-4o-2024-08-06':                   'gpt-4o',
+  'gpt-4o-2024-11-20':                   'gpt-4o',
+  'gpt-4-turbo':                         'gpt-4-turbo',
+  'gpt-4-turbo-2024-04-09':              'gpt-4-turbo',
+  'gpt-4-turbo-preview':                 'gpt-4-turbo',
+  'gpt-4':                               'gpt-4',
+  'gpt-4-32k':                           'gpt-4-32k',
+  'gpt-4-0613':                          'gpt-4',
+  'text-davinci-002-render-sha':         'gpt-3.5-turbo',
+  'text-davinci-002-render-sha-mobile':  'gpt-3.5-turbo',
+  'text-davinci-002-render-sha-code-interpreter': 'gpt-3.5-turbo',
+  'text-davinci-002-render-sha-plugin':  'gpt-3.5-turbo',
+  'gpt-3.5-turbo':                       'gpt-3.5-turbo',
+  'gpt-3.5-turbo-0613':                  'gpt-3.5-turbo-0125',
+  'gpt-3.5-turbo-0125':                  'gpt-3.5-turbo-0125',
+  'gpt-3.5-turbo-1106':                  'gpt-3.5-turbo-1106',
+};
+
+function detectExportType(data) {
+  if (!data.length) return 'unknown';
+  const first = data[0];
+  if (first.mapping && first.conversation_id) return 'chatgpt';
+  if (first.chat_messages || first.uuid) return 'claude';
+  if (first.mapping) return 'chatgpt';
+  return 'claude';
+}
+
+function countTokens(text) {
+  if (!text) return 0;
+  // chars/4 is the standard approximation for cl100k_base (OpenAI/Anthropic tokenizers).
+  // Much more accurate than word-based counting, especially for code and long words.
+  return Math.max(1, Math.floor(text.length / 4));
+}
+
+function detectClaudeModel(conv) {
+  if (conv.model) return [CLAUDE_MODEL_MAP[conv.model] || conv.model, 'anthropic'];
+  for (const msg of (conv.chat_messages || [])) {
+    if (msg.sender === 'assistant') {
+      const slug = msg.metadata?.model;
+      if (slug) return [CLAUDE_MODEL_MAP[slug] || slug, 'anthropic'];
+    }
+  }
+  return [null, 'anthropic'];
+}
+
+function detectChatGPTModel(conv) {
+  const mapping = conv.mapping || {};
+  function traverse(nodeId) {
+    const node = mapping[nodeId];
+    if (!node) return null;
+    const msg = node.message;
+    if (msg?.author?.role === 'assistant') {
+      const slug = msg.metadata?.model_slug;
+      if (slug) return slug;
+    }
+    for (const child of (node.children || [])) {
+      const r = traverse(child);
+      if (r) return r;
+    }
+    return null;
+  }
+  for (const [id, node] of Object.entries(mapping)) {
+    if (node && node.parent === null) {
+      const slug = traverse(id);
+      if (slug) {
+        return [CHATGPT_MODEL_MAP[slug] || slug, 'openai'];
+      }
+      break;
+    }
+  }
+  return [null, 'openai'];
+}
+
+function extractClaudeMessages(conv, defaultLatency) {
+  const msgs = [];
+  const convCreate = conv.created_at;
+  for (const msg of (conv.chat_messages || [])) {
+    if (msg.sender !== 'assistant') continue;
+    let tsStr = msg.created_at || convCreate;
+    let ts = tsStr ? new Date(tsStr) : new Date();
+    let text = '';
+    let latency = defaultLatency;
+    for (const block of (msg.content || [])) {
+      if (block.type === 'text') {
+        text += (block.text || '');
+        try {
+          const t0 = new Date(block.start_timestamp);
+          const t1 = new Date(block.stop_timestamp);
+          const dur = (t1 - t0) / 1000;
+          if (Number.isFinite(dur) && dur > 0) latency = dur;
+        } catch(e) {}
+      }
+    }
+    if (!text) text = msg.text || '';
+    msgs.push({ ts, text, latency });
+  }
+  return msgs;
+}
+
+function extractChatGPTMessages(conv, defaultLatency) {
+  const msgs = [];
+  const mapping = conv.mapping || {};
+  function traverse(nodeId) {
+    const node = mapping[nodeId];
+    if (!node) return;
+    const msg = node.message;
+    if (msg?.author?.role === 'assistant') {
+      const tsFloat = msg.create_time;
+      const ts = tsFloat ? new Date(tsFloat * 1000) : new Date();
+      let text = '';
+      for (const part of (msg.content?.parts || [])) {
+        if (typeof part === 'string') text += part;
+      }
+      msgs.push({ ts, text, latency: defaultLatency });
+    }
+    for (const child of (node.children || [])) traverse(child);
+  }
+  for (const [id, node] of Object.entries(mapping)) {
+    if (node && node.parent === null) { traverse(id); break; }
+  }
+  return msgs;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN PROCESSING
+// ═══════════════════════════════════════════════════════════════════
+
+const ANTHROPIC_FALLBACKS = ['claude-sonnet-4-20250514','claude-3-5-sonnet-20241022','claude-3-5-haiku-20241022'];
+const OPENAI_FALLBACKS    = ['gpt-4o','gpt-4-turbo','gpt-4','gpt-3.5-turbo'];
+
+async function processConversations(data, zone, overrideModel, defaultLatency, onProgress) {
+  const elecMix = ELECTRICITY_MIXES[zone] || ELECTRICITY_MIXES['WOR'];
+  const exportType = detectExportType(data);
+  const results = [];
+  const warnings = [];
+  let skipped = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const conv = data[i];
+    if (i % 20 === 0) {
+      onProgress(i / data.length, `Processing conversation ${i+1} of ${data.length}…`);
+      await new Promise(r => setTimeout(r, 0)); // yield to UI
+    }
+
+    const convId   = conv.uuid || conv.conversation_id || `conv_${i}`;
+    const convName = conv.name || 'Untitled';
+
+    let [detectedModel, provider] = exportType === 'chatgpt'
+      ? detectChatGPTModel(conv)
+      : detectClaudeModel(conv);
+
+    const messages = exportType === 'chatgpt'
+      ? extractChatGPTMessages(conv, defaultLatency)
+      : extractClaudeMessages(conv, defaultLatency);
+
+    for (const { ts, text, latency } of messages) {
+      const tokens = countTokens(text);
+      if (tokens === 0) { skipped++; continue; }
+
+      // Determine model to use
+      let modelName = overrideModel || detectedModel;
+      if (!modelName) {
+        modelName = provider === 'openai' ? 'gpt-4o' : 'claude-sonnet-4-20250514';
+        if (!warnings._defaultWarnShown) {
+          warnings.push(`No model tags found in export — using default fallback: ${modelName} for all messages`);
+          warnings._defaultWarnShown = true;
+        }
+      }
+
+      // Try model, then fallbacks
+      const fallbacks = provider === 'openai' ? OPENAI_FALLBACKS : ANTHROPIC_FALLBACKS;
+      const toTry = [modelName, ...fallbacks.filter(f => f !== modelName)];
+
+      let params = null;
+      let usedModel = modelName;
+      for (const mn of toTry) {
+        params = getModelParams(provider, mn);
+        if (params) { usedModel = mn; break; }
+      }
+
+      if (!params) {
+        skipped++;
+        const warnKey = `no-model::${modelName}::${provider}`;
+        if (!warnings._seen) warnings._seen = new Set();
+        if (!warnings._seen.has(warnKey)) {
+          warnings._seen.add(warnKey);
+          warnings.push(`No model data for: ${modelName} (${provider}), skipped messages with this model`);
+        }
+        continue;
+      }
+
+      if (params.warnings.includes('model-arch-not-released') && !results._archWarnShown) {
+        warnings._archWarn = true;
+      }
+
+      try {
+        const impacts = computeImpacts(
+          params.activeParams, params.totalParams,
+          tokens, latency, elecMix
+        );
+
+        results.push({
+          convId, convName, ts,
+          model: usedModel,
+          provider,
+          tokens,
+          energy: impacts.energy,
+          gwp:    impacts.gwp,
+          water:  impacts.wcf,
+          hasArchWarn: params.warnings.includes('model-arch-not-released'),
+        });
+      } catch(e) {
+        skipped++;
+        warnings.push(`Calculation error: ${e.message}`);
+      }
+    }
+  }
+
+  if (skipped > 0) warnings.push(`Skipped ${skipped} messages (no content or unsupported model).`);
+
+  const hasArchWarn = results.some(r => r.hasArchWarn);
+  if (hasArchWarn) {
+    warnings.unshift('⚠ Some models have undisclosed architectures — estimates use parameter range bounds. Expect lower precision.');
+  }
+
+  onProgress(1.0, 'Done!');
+  return { results, warnings, exportType };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AGGREGATION
+// ═══════════════════════════════════════════════════════════════════
+
+function mkAgg() {
+  return { requests:0, tokens:0, energy:0, energyLo:0, energyHi:0,
+           gwp:0, gwpLo:0, gwpHi:0, water:0, waterLo:0, waterHi:0, firstTs: null, lastTs: null };
+}
+
+function addToAgg(agg, r) {
+  agg.requests++;
+  agg.tokens  += r.tokens;
+  agg.energy  += mid(r.energy);
+  agg.energyLo+= lo(r.energy);
+  agg.energyHi+= hi(r.energy);
+  agg.gwp     += mid(r.gwp);
+  agg.gwpLo   += lo(r.gwp);
+  agg.gwpHi   += hi(r.gwp);
+  agg.water   += mid(r.water);
+  agg.waterLo += lo(r.water);
+  agg.waterHi += hi(r.water);
+  if (!agg.firstTs || r.ts < agg.firstTs) agg.firstTs = r.ts;
+  if (!agg.lastTs  || r.ts > agg.lastTs)  agg.lastTs  = r.ts;
+}
+
+function getISOWeek(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+
+function aggregate(results) {
+  const cumulative = mkAgg();
+  const byModel = new Map();
+  const byMonth = new Map();
+  const byWeek  = new Map();
+  const byConv  = new Map();
+
+  for (const r of results) {
+    addToAgg(cumulative, r);
+
+    if (!byModel.has(r.model)) byModel.set(r.model, mkAgg());
+    addToAgg(byModel.get(r.model), r);
+
+    const monthKey = `${r.ts.getFullYear()}-${String(r.ts.getMonth()+1).padStart(2,'0')}`;
+    if (!byMonth.has(monthKey)) byMonth.set(monthKey, mkAgg());
+    addToAgg(byMonth.get(monthKey), r);
+
+    const weekKey = getISOWeek(r.ts);
+    if (!byWeek.has(weekKey)) byWeek.set(weekKey, mkAgg());
+    addToAgg(byWeek.get(weekKey), r);
+
+    const convKey = `${r.convId}::${r.convName}`;
+    if (!byConv.has(convKey)) byConv.set(convKey, { ...mkAgg(), name: r.convName });
+    addToAgg(byConv.get(convKey), r);
+  }
+
+  return { cumulative, byModel, byMonth, byWeek, byConv };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SMART UNIT FORMATTING
+// ═══════════════════════════════════════════════════════════════════
+
+// Returns { value, unit, rangeStr } given kWh
+function fmtEnergy(kwh, lo_kwh, hi_kwh) {
+  const wh = kwh * 1000;
+  let val, unit;
+  if (wh < 1)       { val = wh * 1000;   unit = 'mWh'; }
+  else if (wh < 1000) { val = wh;         unit = 'Wh'; }
+  else if (wh < 1e6)  { val = wh / 1000;  unit = 'kWh'; }
+  else                { val = wh / 1e6;   unit = 'MWh'; }
+
+  // Use same scale for range
+  const scale = { 'mWh': 1e6, 'Wh': 1000, 'kWh': 1, 'MWh': 1e-3 }[unit];
+  const fmtV = (v) => (v * 1000 * (scale / 1000)).toFixed(val < 10 ? 3 : val < 100 ? 2 : 1);
+
+  let rangeStr = '';
+  if (lo_kwh !== undefined && hi_kwh !== undefined && Math.abs(hi_kwh - lo_kwh) > 1e-15) {
+    rangeStr = `${fmtEnergy(lo_kwh).value} – ${fmtEnergy(hi_kwh).value} ${unit}`;
+  }
+
+  return { value: formatSig(val), unit, rangeStr };
+}
+
+function fmtGWP(kgCO2, lo_kg, hi_kg) {
+  const g = kgCO2 * 1000;
+  let val, unit;
+  if (g < 0.001)   { val = g * 1e6; unit = 'μgCO₂eq'; }
+  else if (g < 1)  { val = g * 1000; unit = 'mgCO₂eq'; }
+  else if (g < 1000) { val = g;      unit = 'gCO₂eq'; }
+  else if (g < 1e6)  { val = g/1000; unit = 'kgCO₂eq'; }
+  else               { val = g/1e6;  unit = 'tCO₂eq'; }
+
+  let rangeStr = '';
+  if (lo_kg !== undefined && hi_kg !== undefined && Math.abs(hi_kg - lo_kg) > 1e-15) {
+    rangeStr = `${fmtGWP(lo_kg).value} – ${fmtGWP(hi_kg).value} ${unit}`;
+  }
+
+  return { value: formatSig(val), unit, rangeStr };
+}
+
+function fmtWater(liters, lo_l, hi_l) {
+  const ml = liters * 1000;
+  let val, unit;
+  if (ml < 0.01)   { val = ml * 1000; unit = 'μL'; }
+  else if (ml < 1) { val = ml * 1000; unit = 'μL'; }
+  else if (ml < 1000) { val = ml;      unit = 'mL'; }
+  else if (ml < 1e6)  { val = ml/1000; unit = 'L'; }
+  else                { val = ml/1e6;  unit = 'kL'; }
+
+  let rangeStr = '';
+  if (lo_l !== undefined && hi_l !== undefined && Math.abs(hi_l - lo_l) > 1e-15) {
+    rangeStr = `${fmtWater(lo_l).value} – ${fmtWater(hi_l).value} ${unit}`;
+  }
+
+  return { value: formatSig(val), unit, rangeStr };
+}
+
+function formatSig(v) {
+  if (v >= 1000) return v.toFixed(0);
+  if (v >= 100)  return v.toFixed(1);
+  if (v >= 10)   return v.toFixed(2);
+  if (v >= 1)    return v.toFixed(3);
+  return v.toPrecision(3);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// REAL-WORLD EQUIVALENTS
+// ═══════════════════════════════════════════════════════════════════
+
+function buildEquivalents(agg) {
+  const items = [];
+  const wh = agg.energy * 1000;
+  const gco2 = agg.gwp * 1000;
+  const ml = agg.water * 1000;
+
+  if (wh >= 0.001) {
+    const charges = wh / 5;
+    items.push({ icon: '📱', num: charges.toFixed(charges < 10 ? 1 : 0), label: 'smartphone charges (5 Wh each)' });
+  }
+  if (gco2 >= 0.01) {
+    const km = gco2 / 200;   // 200 gCO₂eq/km avg car
+    if (km >= 0.01) items.push({ icon: '🚗', num: km < 1 ? km.toFixed(0)+'m' : km.toFixed(km<10?2:1)+'km', label: 'driven by average car' });
+  }
+  if (ml >= 1) {
+    const glasses = ml / 250;
+    items.push({ icon: '💧', num: glasses.toFixed(glasses < 10 ? 1 : 0), label: 'glasses of water (250 mL)' });
+  }
+  return items;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TABLE STATE
+// ═══════════════════════════════════════════════════════════════════
+
+const tableState = {
+  model: { sortCol: 'gwp', sortDir: 'desc' },
+  month: { sortCol: 'date', sortDir: 'desc' },
+  week:  { sortCol: 'date', sortDir: 'desc' },
+  conv:  { sortCol: 'gwp',  sortDir: 'desc', page: 0, pageSize: 20 },
+};
+
+let lastAggData = null;
+
+function sortRows(rows, sortCol, sortDir) {
+  const mult = sortDir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (typeof va === 'string') return mult * va.localeCompare(vb);
+    return mult * (va - vb);
+  });
+}
+
+function aggToRows(aggMap) {
+  const rows = [];
+  for (const [key, agg] of aggMap) {
+    const name = agg.name || key.split('::').slice(-1)[0] || key;
+    const dateStr = key.includes('-W') ? key :
+                    (key.match(/^\d{4}-\d{2}$/) ? key + '-01' : null);
+    rows.push({
+      name,
+      requests: agg.requests,
+      tokens: agg.tokens,
+      energy: agg.energy,
+      energyLo: agg.energyLo,
+      energyHi: agg.energyHi,
+      gwp: agg.gwp,
+      gwpLo: agg.gwpLo,
+      gwpHi: agg.gwpHi,
+      water: agg.water,
+      waterLo: agg.waterLo,
+      waterHi: agg.waterHi,
+      date: dateStr ? new Date(dateStr + (key.includes('-W') ? '' : '')) : (agg.firstTs || new Date(0)),
+      firstTs: agg.firstTs,
+    });
+  }
+  return rows;
+}
+
+function renderTableBody(tbody, rows) {
+  tbody.innerHTML = '';
+  for (const r of rows) {
+    const e = fmtEnergy(r.energy, r.energyLo, r.energyHi);
+    const g = fmtGWP(r.gwp, r.gwpLo, r.gwpHi);
+    const w = fmtWater(r.water, r.waterLo, r.waterHi);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="label" title="${escH(r.name)}">${escH(r.name)}</td>
+      <td class="num">${r.requests.toLocaleString()}</td>
+      <td class="num">${r.tokens.toLocaleString()}</td>
+      <td class="num">
+        ${e.value} <span style="color:var(--text3)">${e.unit}</span>
+        ${e.rangeStr ? `<div class="range-cell">${escH(e.rangeStr)}</div>` : ''}
+      </td>
+      <td class="num">
+        ${g.value} <span style="color:var(--text3)">${g.unit}</span>
+        ${g.rangeStr ? `<div class="range-cell">${escH(g.rangeStr)}</div>` : ''}
+      </td>
+      <td class="num">
+        ${w.value} <span style="color:var(--text3)">${w.unit}</span>
+        ${w.rangeStr ? `<div class="range-cell">${escH(w.rangeStr)}</div>` : ''}
+      </td>`;
+    tbody.appendChild(tr);
+  }
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="6" style="text-align:center;color:var(--text3);padding:20px">No data</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function escH(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderAllTables(aggData) {
+  lastAggData = aggData;
+  renderModelTable(aggData);
+  renderMonthTable(aggData);
+  renderWeekTable(aggData);
+  renderConvTable(aggData);
+}
+
+function renderModelTable(aggData) {
+  const { sortCol, sortDir } = tableState.model;
+  const rows = sortRows(aggToRows(aggData.byModel), sortCol, sortDir);
+  renderTableBody(document.querySelector('#model-table tbody'), rows);
+  updateSortHeaders('model-table', sortCol, sortDir);
+}
+
+function renderMonthTable(aggData) {
+  const { sortCol, sortDir } = tableState.month;
+  let rows = aggToRows(aggData.byMonth);
+  if (sortCol === 'date') {
+    rows.sort((a,b) => sortDir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
+  } else {
+    rows = sortRows(rows, sortCol, sortDir);
+  }
+  renderTableBody(document.querySelector('#month-table tbody'), rows);
+  updateSortHeaders('month-table', sortCol, sortDir);
+}
+
+function renderWeekTable(aggData) {
+  const { sortCol, sortDir } = tableState.week;
+  let rows = aggToRows(aggData.byWeek);
+  if (sortCol === 'date') {
+    rows.sort((a,b) => sortDir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
+  } else {
+    rows = sortRows(rows, sortCol, sortDir);
+  }
+  renderTableBody(document.querySelector('#week-table tbody'), rows);
+  updateSortHeaders('week-table', sortCol, sortDir);
+}
+
+function renderConvTable(aggData) {
+  const { sortCol, sortDir, page, pageSize } = tableState.conv;
+  let rows = aggToRows(aggData.byConv);
+
+  if (sortCol === 'date') {
+    rows.sort((a,b) => {
+      const ta = a.firstTs ? a.firstTs.getTime() : 0;
+      const tb = b.firstTs ? b.firstTs.getTime() : 0;
+      return sortDir === 'asc' ? ta - tb : tb - ta;
+    });
+  } else {
+    rows = sortRows(rows, sortCol, sortDir);
+  }
+
+  const total = rows.length;
+  let pageRows;
+  if (pageSize === 0) {
+    pageRows = rows;
+  } else {
+    const start = page * pageSize;
+    pageRows = rows.slice(start, start + pageSize);
+  }
+
+  renderTableBody(document.querySelector('#conv-table tbody'), pageRows);
+  updateSortHeaders('conv-table', sortCol, sortDir);
+  renderPagination(total, page, pageSize);
+}
+
+function renderPagination(total, page, pageSize) {
+  const el = document.getElementById('conv-pagination');
+  if (pageSize === 0 || total === 0) { el.innerHTML = `<span class="page-info">${total} conversations</span>`; return; }
+
+  const totalPages = Math.ceil(total / pageSize);
+  const start = page * pageSize + 1;
+  const end = Math.min((page + 1) * pageSize, total);
+
+  let html = `
+    <button class="page-btn" id="pg-prev" ${page===0?'disabled':''}>‹ Prev</button>`;
+
+  // Show page numbers (windowed)
+  const showPages = [];
+  showPages.push(0);
+  for (let p = Math.max(1, page-2); p <= Math.min(totalPages-2, page+2); p++) showPages.push(p);
+  showPages.push(totalPages-1);
+
+  let prev = -1;
+  for (const p of [...new Set(showPages)]) {
+    if (p > prev + 1) html += `<span class="page-info">…</span>`;
+    html += `<button class="page-btn ${p===page?'active':''}" data-page="${p}">${p+1}</button>`;
+    prev = p;
+  }
+
+  html += `
+    <button class="page-btn" id="pg-next" ${page>=totalPages-1?'disabled':''}>Next ›</button>
+    <span class="page-info">${start}–${end} of ${total}</span>
+  `;
+
+  el.innerHTML = html;
+
+  el.querySelector('#pg-prev')?.addEventListener('click', () => {
+    tableState.conv.page = Math.max(0, page - 1);
+    renderConvTable(lastAggData);
+  });
+  el.querySelector('#pg-next')?.addEventListener('click', () => {
+    tableState.conv.page = Math.min(Math.ceil(total/pageSize)-1, page + 1);
+    renderConvTable(lastAggData);
+  });
+  el.querySelectorAll('[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tableState.conv.page = parseInt(btn.dataset.page);
+      renderConvTable(lastAggData);
+    });
+  });
+}
+
+function updateSortHeaders(tableId, sortCol, sortDir) {
+  document.querySelectorAll(`#${tableId} th.sortable`).forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.col === sortCol) {
+      th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER SUMMARY
+// ═══════════════════════════════════════════════════════════════════
+
+function renderSummary(cumulative, exportType, resultCount) {
+  const e = fmtEnergy(cumulative.energy, cumulative.energyLo, cumulative.energyHi);
+  const g = fmtGWP(cumulative.gwp, cumulative.gwpLo, cumulative.gwpHi);
+  const w = fmtWater(cumulative.water, cumulative.waterLo, cumulative.waterHi);
+
+  const exportLabel = exportType === 'chatgpt' ? 'ChatGPT' : exportType === 'claude' ? 'Claude.ai' : 'Mixed';
+
+  document.getElementById('summary-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Export Type</div>
+      <div class="stat-value" style="font-size:18px;color:var(--text)">${exportLabel}</div>
+      <div class="stat-unit">${resultCount.toLocaleString()} assistant messages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Energy Consumed</div>
+      <div class="stat-value">${e.value}</div>
+      <div class="stat-unit">${e.unit}</div>
+      ${e.rangeStr ? `<div class="stat-range">${e.rangeStr}</div>` : ''}
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">GHG Emissions</div>
+      <div class="stat-value">${g.value}</div>
+      <div class="stat-unit">${g.unit}</div>
+      ${g.rangeStr ? `<div class="stat-range">${g.rangeStr}</div>` : ''}
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Water Consumption</div>
+      <div class="stat-value">${w.value}</div>
+      <div class="stat-unit">${w.unit}</div>
+      ${w.rangeStr ? `<div class="stat-range">${w.rangeStr}</div>` : ''}
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Output Tokens</div>
+      <div class="stat-value" style="font-size:18px">${(cumulative.tokens/1e6).toFixed(2)}</div>
+      <div class="stat-unit">million tokens generated</div>
+    </div>
+  `;
+
+  const equivs = buildEquivalents(cumulative);
+  document.getElementById('equivalents-row').innerHTML = equivs.map(eq =>
+    `<div class="equiv-chip">${eq.icon} <span class="equiv-num">≈ ${eq.num}</span> ${eq.label}</div>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// JSON EXPORT
+// ═══════════════════════════════════════════════════════════════════
+
+function exportJSON(aggData, cumulative) {
+  function aggToObj(agg) {
+    return {
+      requests: agg.requests,
+      output_tokens: agg.tokens,
+      energy_kwh: { mid: agg.energy, lo: agg.energyLo, hi: agg.energyHi },
+      gwp_kgco2eq: { mid: agg.gwp, lo: agg.gwpLo, hi: agg.gwpHi },
+      water_l: { mid: agg.water, lo: agg.waterLo, hi: agg.waterHi },
+    };
+  }
+  const report = {
+    generated_at: new Date().toISOString(),
+    cumulative: aggToObj(cumulative),
+    by_model:  Object.fromEntries([...aggData.byModel].map(([k,v])  => [k, aggToObj(v)])),
+    by_month:  Object.fromEntries([...aggData.byMonth].map(([k,v])  => [k, aggToObj(v)])),
+    by_week:   Object.fromEntries([...aggData.byWeek].map(([k,v])   => [k, aggToObj(v)])),
+    by_conversation: Object.fromEntries([...aggData.byConv].map(([k,v]) => [k.split('::').slice(-1)[0], aggToObj(v)])),
+  };
+  const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'llm_eco_report.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// UI WIRING
+// ═══════════════════════════════════════════════════════════════════
+
+let loadedFile = null;
+
+const uploadZone = document.getElementById('upload-zone');
+const fileInput  = document.getElementById('file-input');
+const analyzeBtn = document.getElementById('analyze-btn');
+const errorBox   = document.getElementById('error-box');
+const progressSection = document.getElementById('progress-section');
+const progressBar     = document.getElementById('progress-bar');
+const progressLabel   = document.getElementById('progress-label');
+const resultsSection  = document.getElementById('results-section');
+const warningsSection = document.getElementById('warnings-section');
+
+uploadZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+uploadZone.addEventListener('dragover', e => {
+  e.preventDefault(); uploadZone.classList.add('drag-over');
+});
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag-over');
+  handleFile(e.dataTransfer.files[0]);
+});
+
+function handleFile(file) {
+  if (!file) return;
+  if (!file.name.endsWith('.json')) {
+    showError('Please upload a .json file (conversations.json from Claude.ai or ChatGPT export).');
+    return;
+  }
+  loadedFile = file;
+  uploadZone.querySelector('.upload-title').textContent = `✓ ${file.name}`;
+  uploadZone.querySelector('.upload-sub').innerHTML = `<span>${(file.size / 1024 / 1024).toFixed(1)} MB</span> · click to change file`;
+  analyzeBtn.disabled = false;
+  hideError();
+}
+
+analyzeBtn.addEventListener('click', async () => {
+  if (!loadedFile) return;
+  analyzeBtn.disabled = true;
+  hideError();
+  warningsSection.style.display = 'none';
+  resultsSection.style.display = 'none';
+  progressSection.style.display = 'block';
+
+  try {
+    const text = await loadedFile.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch(e) {
+      throw new Error('Invalid JSON file. Please check the file is a valid conversations export.');
+    }
+
+    if (!Array.isArray(data)) {
+      throw new Error('Expected a JSON array at the top level. Please ensure this is a conversations.json export.');
+    }
+
+    const zone = document.getElementById('zone-select').value;
+    const overrideModel = document.getElementById('model-override').value.trim() || null;
+    const defaultLatency = parseFloat(document.getElementById('default-latency').value) || 30;
+
+    const { results, warnings, exportType } = await processConversations(
+      data, zone, overrideModel, defaultLatency,
+      (pct, msg) => {
+        progressBar.style.width = (pct * 100) + '%';
+        progressLabel.textContent = msg;
+      }
+    );
+
+    progressSection.style.display = 'none';
+
+    if (!results.length) {
+      throw new Error('No assistant messages found in this export. Check the file format.');
+    }
+
+    if (warnings.length) {
+      warningsSection.style.display = 'block';
+      warningsSection.innerHTML = warnings.map(w => `<div>⚠ ${escH(w)}</div>`).join('');
+    }
+
+    const aggData = aggregate(results);
+    renderSummary(aggData.cumulative, exportType, results.length);
+    renderAllTables(aggData);
+
+    resultsSection.style.display = 'block';
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Store for export
+    document.getElementById('export-json-btn').onclick = () => exportJSON(aggData, aggData.cumulative);
+
+  } catch(e) {
+    progressSection.style.display = 'none';
+    showError(e.message);
+    analyzeBtn.disabled = false;
+  }
+});
+
+// ── Column sort handlers ──
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const table = th.closest('table').id.replace('-table','');
+    const col = th.dataset.col;
+    const state = tableState[table];
+    if (state.sortCol === col) {
+      state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      state.sortCol = col;
+      state.sortDir = col === 'name' ? 'asc' : 'desc';
+    }
+    if (table === 'conv') state.page = 0;
+    if (lastAggData) renderAllTables(lastAggData);
+  });
+});
+
+// ── Sort buttons ──
+document.querySelectorAll('[data-table][data-sort]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tableKey = btn.dataset.table;
+    const sortKey  = btn.dataset.sort;
+    const dirKey   = btn.dataset.dir;
+    tableState[tableKey].sortCol = sortKey;
+    tableState[tableKey].sortDir = dirKey;
+    if (tableKey === 'conv') tableState.conv.page = 0;
+
+    // Update active state for sibling buttons
+    const siblings = document.querySelectorAll(`[data-table="${tableKey}"][data-sort]`);
+    siblings.forEach(s => s.classList.toggle('active', s === btn));
+
+    if (lastAggData) renderAllTables(lastAggData);
+  });
+});
+
+// ── Conversations page size ──
+document.getElementById('conv-page-size').addEventListener('change', e => {
+  tableState.conv.pageSize = parseInt(e.target.value);
+  tableState.conv.page = 0;
+  if (lastAggData) renderConvTable(lastAggData);
+});
+
+// ── Reset ──
+document.getElementById('reset-link').addEventListener('click', () => {
+  loadedFile = null;
+  analyzeBtn.disabled = true;
+  resultsSection.style.display = 'none';
+  warningsSection.style.display = 'none';
+  progressSection.style.display = 'none';
+  uploadZone.querySelector('.upload-title').textContent = 'Drop your conversations.json here';
+  uploadZone.querySelector('.upload-sub').innerHTML = `or <span>click to browse</span> · Claude.ai and ChatGPT exports both supported`;
+  fileInput.value = '';
+  hideError();
+  lastAggData = null;
+});
+
+function showError(msg) {
+  errorBox.textContent = '⚠ ' + msg;
+  errorBox.style.display = 'block';
+}
+function hideError() {
+  errorBox.style.display = 'none';
+}
+
+</script>
+</body>
+</html>
