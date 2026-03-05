@@ -1602,6 +1602,12 @@ function fmtWater(liters, lo_l, hi_l) {
   return { value: formatSig(val), unit, rangeStr };
 }
 
+function fmtTokens(n) {
+  if (n >= 1e6)      return (n / 1e6).toFixed(n >= 10e6 ? 1 : 2) + 'M';
+  if (n >= 1000)     return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K';
+  return n.toLocaleString();
+}
+
 function formatSig(v) {
   if (v >= 1000) return v.toFixed(0);
   if (v >= 100)  return v.toFixed(1);
@@ -1894,7 +1900,7 @@ function renderSummary(cumulative, exportType, resultCount) {
     </div>
     <div class="stat-card">
       <div class="stat-label">Output Tokens</div>
-      <div class="stat-value" style="font-size:18px">${(cumulative.tokens/1e6).toFixed(2)}M</div>
+      <div class="stat-value" style="font-size:18px">${fmtTokens(cumulative.tokens)}</div>
       <div class="stat-unit">output tokens generated</div>
     </div>
   `;
