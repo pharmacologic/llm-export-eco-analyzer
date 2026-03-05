@@ -865,15 +865,15 @@
       <div class="pagination" id="conv-pagination"></div>
     </div>
 
-    <div class="methodology-note">
-      <strong>Methodology:</strong> Calculations use the <a href="https://ecologits.ai/methodology" target="_blank">EcoLogits</a> impact model.
-      Energy estimates include GPU inference + server overhead. Embodied impacts cover hardware manufacturing proportional to usage time.
-      Ranges reflect uncertainty in undisclosed model architectures. Token counts use a characters ÷ 4 approximation (close to tiktoken cl100k_base for prose; may vary for code-heavy conversations).
-      Input tokens are not included in energy estimates. Latency is estimated from message timestamps.
-      This tool is for awareness and comparison — not forensic auditing.
-    </div>
-
   </div><!-- /results -->
+
+  <div class="methodology-note">
+    <strong>Methodology:</strong> Calculations use the <a href="https://ecologits.ai/methodology" target="_blank">EcoLogits</a> impact model.
+    Energy estimates include GPU inference + server overhead. Embodied impacts cover hardware manufacturing proportional to usage time.
+    Ranges reflect uncertainty in undisclosed model architectures. Token counts use a characters ÷ 4 approximation (close to tiktoken cl100k_base for prose; may vary for code-heavy conversations).
+    Input tokens are not included in energy estimates. Latency is estimated from message timestamps.
+    This tool is for awareness and comparison — not forensic auditing.
+  </div>
 
 </div><!-- /container -->
 
@@ -1740,8 +1740,8 @@ function renderSummary(cumulative, exportType, resultCount) {
     </div>
     <div class="stat-card">
       <div class="stat-label">Output Tokens</div>
-      <div class="stat-value" style="font-size:18px">${(cumulative.tokens/1e6).toFixed(2)}</div>
-      <div class="stat-unit">million tokens generated</div>
+      <div class="stat-value" style="font-size:18px">${(cumulative.tokens/1e6).toFixed(2)}M</div>
+      <div class="stat-unit">output tokens generated</div>
     </div>
   `;
 
