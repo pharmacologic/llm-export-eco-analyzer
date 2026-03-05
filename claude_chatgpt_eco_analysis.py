@@ -242,6 +242,8 @@ CLAUDE_MODEL_MAP = {
     "claude-2.1":               "claude-2-1",
     "claude-2.0":               "claude-2-0",
     "claude-instant-1.2":       "claude-instant-1-2",
+    # Claude Code short-form IDs not directly registered in EcoLogits
+    "claude-haiku-4-6":         "claude-haiku-4-5-20251001",
 }
 
 # Map ChatGPT model slugs → ecologits-compatible model names
@@ -388,6 +390,230 @@ def detect_export_type(data: list) -> str:
         return "claude"
     
     return "unknown"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CLAUDE CODE FORMAT DETECTION & PARSING
+# ════════════════════════════════════════════════════════════════════════════
+
+def is_claudecode_input(path: Path) -> bool:
+    """Return True if the path looks like Claude Code data (JSONL file or directory)."""
+    if path.is_dir():
+        return True
+    return path.suffix.lower() == ".jsonl"
+
+
+def _collect_jsonl_paths(path: Path) -> list[Path]:
+    """Return a sorted list of .jsonl files from a file or directory."""
+    if path.is_file():
+        return [path]
+    # Directory: find all .jsonl files (non-recursive — each project dir is flat)
+    files = sorted(path.glob("*.jsonl"))
+    if not files:
+        # Fall back to recursive search
+        files = sorted(path.rglob("*.jsonl"))
+    return files
+
+
+def _session_name_from_entries(entries: list[dict]) -> str:
+    """Derive a human-readable session name from JSONL entries."""
+    # Try the first user message content
+    for e in entries:
+        if e.get("type") == "user":
+            msg = e.get("message", {})
+            content = msg.get("content", "")
+            if isinstance(content, str) and content.strip():
+                text = content.strip().replace("\n", " ")
+                return text[:70] + ("…" if len(text) > 70 else "")
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "").strip().replace("\n", " ")
+                        if text:
+                            return text[:70] + ("…" if len(text) > 70 else "")
+    # Fall back to project directory name from cwd
+    for e in entries:
+        cwd = e.get("cwd", "")
+        if cwd:
+            return Path(cwd).name
+    return "unnamed session"
+
+
+def parse_claudecode_sessions(
+    paths: list[Path],
+    zone: Optional[str],
+    override_model: Optional[str] = None,
+    model_mix: Optional[list[tuple[str, float]]] = None,
+) -> list[RequestImpact]:
+    """
+    Parse Claude Code JSONL session files and estimate environmental impacts.
+
+    Each JSONL file is one session (conversation). Only assistant entries with a
+    non-null stop_reason ('end_turn' or 'tool_use') are counted — this avoids
+    double-counting streaming intermediates and thinking-block flushes.
+
+    Token counts come directly from message.usage.output_tokens (exact API value),
+    so tiktoken is not needed here.
+    """
+    results: list[RequestImpact] = []
+    skipped = 0
+    total_files = len(paths)
+
+    console.print(f"[dim]Detected export format: claude-code ({total_files} session file(s))[/dim]\n"
+                  if RICH else f"Detected export format: claude-code ({total_files} session file(s))\n")
+
+    for path in paths:
+        # Load all entries from this JSONL file
+        try:
+            with open(path, encoding="utf-8") as f:
+                entries = [json.loads(line) for line in f if line.strip()]
+        except Exception as e:
+            console.print(f"[yellow]⚠ Could not read {path.name}: {e}[/yellow]"
+                          if RICH else f"⚠ Could not read {path.name}: {e}")
+            continue
+
+        session_id = path.stem  # filename without .jsonl
+        session_name = _session_name_from_entries(entries)
+
+        # Only process complete assistant responses (not streaming intermediates)
+        for entry in entries:
+            if entry.get("type") != "assistant":
+                continue
+
+            msg = entry.get("message", {})
+            stop_reason = msg.get("stop_reason")
+            if stop_reason not in ("end_turn", "tool_use"):
+                continue
+
+            usage = msg.get("usage", {})
+            output_tokens = usage.get("output_tokens", 0)
+            if output_tokens == 0:
+                skipped += 1
+                continue
+
+            # Timestamp
+            ts_str = entry.get("timestamp", "")
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except Exception:
+                ts = datetime.now(timezone.utc)
+
+            # Model resolution
+            raw_model = msg.get("model", "")
+            if override_model:
+                resolved_model = override_model
+            elif raw_model and raw_model != "<synthetic>":
+                resolved_model = CLAUDE_MODEL_MAP.get(raw_model, raw_model)
+            else:
+                resolved_model = DEFAULT_CLAUDE_MODEL
+
+            # Decide which model(s) to call
+            if model_mix and not override_model and (not raw_model or raw_model == "<synthetic>"):
+                use_mix = model_mix
+            else:
+                use_mix = [(resolved_model, 1.0)]
+
+            fallback_models = [
+                ("claude-sonnet-4-20250514", 1.0),
+                ("claude-sonnet-4-5-20251001", 1.0),
+                ("claude-opus-4-5-20250514", 1.0),
+                ("claude-haiku-4-5-20251001", 1.0),
+            ]
+
+            # EcoLogits call(s)
+            agg_energy = agg_energy_lo = agg_energy_hi = 0.0
+            agg_gwp    = agg_gwp_lo    = agg_gwp_hi    = 0.0
+            agg_water  = agg_water_lo  = agg_water_hi  = 0.0
+            warn_msgs: list[str] = []
+            mix_label = use_mix[0][0] if len(use_mix) == 1 else (
+                "+".join(f"{m}({w*100:.0f}%)" for m, w in use_mix))
+
+            ok = False
+            for m_name, m_weight in list(use_mix):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    try:
+                        kwargs = dict(
+                            provider=CLAUDE_PROVIDER,
+                            model_name=m_name,
+                            output_token_count=output_tokens,
+                            request_latency=DEFAULT_LATENCY,
+                        )
+                        if zone:
+                            kwargs["electricity_mix_zone"] = zone
+                        impacts = llm_impacts(**kwargs)
+
+                        if impacts is None or impacts.energy is None:
+                            found_fallback = False
+                            for fb_name, fb_weight in fallback_models:
+                                try:
+                                    kwargs["model_name"] = fb_name
+                                    impacts = llm_impacts(**kwargs)
+                                    if impacts is not None:
+                                        warn_msgs.append(f"[{m_name}] not in EcoLogits, using {fb_name}")
+                                        m_name = fb_name
+                                        found_fallback = True
+                                        break
+                                except Exception:
+                                    pass
+                            if not found_fallback:
+                                warn_msgs.append(f"[{m_name}] no fallback found, skipping")
+                                continue
+
+                        ok = True
+                    except Exception as e:
+                        warn_msgs.append(f"[{m_name}] {e}")
+                        continue
+
+                warn_msgs += [str(w.message) for w in caught]
+                if impacts is None or impacts.energy is None:
+                    continue
+
+                energy = impacts.energy.value
+                gwp    = impacts.gwp.value
+                water  = impacts.wcf.value
+
+                agg_energy    += _mid(energy) * m_weight
+                agg_energy_lo += _lo(energy)  * m_weight
+                agg_energy_hi += _hi(energy)  * m_weight
+                agg_gwp       += _mid(gwp)    * m_weight
+                agg_gwp_lo    += _lo(gwp)     * m_weight
+                agg_gwp_hi    += _hi(gwp)     * m_weight
+                agg_water     += _mid(water)  * m_weight
+                agg_water_lo  += _lo(water)   * m_weight
+                agg_water_hi  += _hi(water)   * m_weight
+
+            if not ok:
+                skipped += 1
+                for w in warn_msgs:
+                    console.print(f"[yellow]⚠ {session_name}: {w}[/yellow]"
+                                  if RICH else f"⚠ {session_name}: {w}")
+                continue
+
+            results.append(RequestImpact(
+                conversation_id=session_id,
+                conversation_name=session_name,
+                timestamp=ts,
+                model=mix_label,
+                provider=CLAUDE_PROVIDER,
+                output_tokens=output_tokens,
+                energy_kwh=agg_energy,
+                energy_kwh_lo=agg_energy_lo,
+                energy_kwh_hi=agg_energy_hi,
+                gwp_kgco2=agg_gwp,
+                gwp_kgco2_lo=agg_gwp_lo,
+                gwp_kgco2_hi=agg_gwp_hi,
+                water_l=agg_water,
+                water_l_lo=agg_water_lo,
+                water_l_hi=agg_water_hi,
+                warnings_list=warn_msgs,
+            ))
+
+    if skipped > 0:
+        console.print(f"[yellow]Skipped {skipped} entries with no output or unresolvable model.[/yellow]\n"
+                      if RICH else f"Skipped {skipped} entries with no output or unresolvable model.\n")
+
+    return results
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -738,7 +964,7 @@ def parse_conversations(
                         impacts = llm_impacts(**kwargs)
                         
                         # Check if impacts is None (model not registered)
-                        if impacts is None:
+                        if impacts is None or impacts.energy is None:
                             # Try fallback models
                             found_fallback = False
                             for fallback_name, fallback_weight in fallback_models:
@@ -765,7 +991,7 @@ def parse_conversations(
                 warn_msgs += [str(w.message) for w in caught]
                 
                 # Only process if we successfully got impacts
-                if impacts is None:
+                if impacts is None or impacts.energy is None:
                     continue
                     
                 energy = impacts.energy.value
@@ -1076,6 +1302,7 @@ QUICK START
 WHAT THIS TOOL DOES
 ───────────────────────────────────────────────────────────────────────────────
   • Parses Claude.ai or ChatGPT conversation exports (JSON)
+  • Also analyzes Claude Code session files (.jsonl) or project directories
   • Estimates energy (kWh), CO₂ emissions (kg), and water usage (L)
   • Shows impact by model, time period, and conversation
   • Provides real-world equivalents (km driven, meals, showers, etc.)
@@ -1094,6 +1321,14 @@ HOW TO EXPORT YOUR CONVERSATIONS
     2. Request your data export
     3. Check email for download link (usually within hours)
     4. Extract conversations.json
+
+  Claude Code:
+    Sessions are stored automatically at:
+      ~/.claude/projects/<project-name>/*.jsonl
+    Pass a single .jsonl file (one session) or an entire project directory:
+      python claude_chatgpt_eco_analysis.py ~/.claude/projects/my-project/
+      python claude_chatgpt_eco_analysis.py ~/.claude/projects/my-project/abc123.jsonl
+    Token counts come directly from the API usage data — no estimation needed.
 
 
 MODEL SELECTION (if export lacks model metadata)
@@ -1214,7 +1449,9 @@ LEARN MORE
   EcoLogits methodology: https://ecologits.ai/
   Anthropic sustainability: https://anthropic.com/research/ai-and-environmental-sustainability
         """)
-    parser.add_argument("input",  help="Path to conversations.json (Claude or ChatGPT)")
+    parser.add_argument("input",
+        help="Path to conversations.json (Claude.ai or ChatGPT), a Claude Code .jsonl session "
+             "file, or a Claude Code project directory containing .jsonl files")
     parser.add_argument("--output", "-o", help="Save full results to this JSON file")
     parser.add_argument("--zone", "-z",
         help="ISO 3166-1 alpha-3 electricity mix zone (e.g. FRA, DEU, USA). "
@@ -1263,28 +1500,41 @@ LEARN MORE
     # ── load ─────────────────────────────────────────────────────────────────
     path = Path(args.input)
     if not path.exists():
-        print(f"ERROR: File not found: {path}", file=sys.stderr)
+        print(f"ERROR: Path not found: {path}", file=sys.stderr)
         sys.exit(1)
 
-    console.rule("Claude.ai & ChatGPT Environmental Impact Analyzer")
+    console.rule("Claude.ai, ChatGPT & Claude Code Environmental Impact Analyzer")
     console.print(f"  Loading: [bold]{path}[/bold]\n" if RICH else f"  Loading: {path}\n")
 
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-
-    if not isinstance(data, list):
-        print("ERROR: Expected a JSON array at top level.", file=sys.stderr)
-        sys.exit(1)
-
-    console.print(f"  Found {len(data)} conversation(s). Calculating impacts…\n")
-
     # ── parse & calculate ────────────────────────────────────────────────────
-    results = parse_conversations(
-        data,
-        zone=args.zone,
-        override_model=override_model,
-        model_mix=model_mix,
-    )
+    if is_claudecode_input(path):
+        jsonl_paths = _collect_jsonl_paths(path)
+        if not jsonl_paths:
+            print(f"ERROR: No .jsonl files found in: {path}", file=sys.stderr)
+            sys.exit(1)
+        console.print(f"  Found {len(jsonl_paths)} session file(s). Calculating impacts…\n")
+        results = parse_claudecode_sessions(
+            jsonl_paths,
+            zone=args.zone,
+            override_model=override_model,
+            model_mix=model_mix,
+        )
+    else:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, list):
+            print("ERROR: Expected a JSON array at top level.", file=sys.stderr)
+            sys.exit(1)
+
+        console.print(f"  Found {len(data)} conversation(s). Calculating impacts…\n")
+
+        results = parse_conversations(
+            data,
+            zone=args.zone,
+            override_model=override_model,
+            model_mix=model_mix,
+        )
 
     if not results:
         console.print("[red]No results — no assistant messages found.[/red]"
