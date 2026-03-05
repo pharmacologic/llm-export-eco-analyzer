@@ -1,10 +1,11 @@
 # Claude & ChatGPT Environmental Impact Analyzer
 
-Estimate the environmental footprint of your AI conversations. This tool parses your `conversations.json` exports from Claude.ai or ChatGPT and estimates the energy consumption, CO₂ emissions (GHG), and water usage of every request using [EcoLogits](https://ecologits.ai/).
+Estimate the environmental footprint of your AI conversations. This tool parses conversation exports from Claude.ai or ChatGPT, and also reads Claude Code session files directly from `~/.claude/projects/`. It estimates the energy consumption, CO₂ emissions (GHG), and water usage of every request using [EcoLogits](https://ecologits.ai/).
 
 ## Features
 
-- **Automatic format detection**: Works with both Claude.ai and ChatGPT exports
+- **Automatic format detection**: Works with Claude.ai exports, ChatGPT exports, and Claude Code session files
+- **Claude Code support**: Point to a `.jsonl` session file or a project directory — token counts come straight from the API, no estimation needed
 - **Multi-model support**: Automatically detects model metadata from exports, or override with `--model` or `--mix`
 - **Detailed breakdowns**: See environmental impact by model, month, week, and conversation
 - **Uncertainty ranges**: All metrics include low/high estimates reflecting model architecture uncertainty
@@ -30,11 +31,14 @@ Estimate the environmental footprint of your AI conversations. This tool parses 
 ### Basic Usage
 
 ```bash
-# Claude export with default model (Claude Sonnet 4)
+# Claude.ai or ChatGPT export
 python claude_chatgpt_eco_analysis.py conversations.json
 
-# ChatGPT export with default model (GPT-4o)
-python claude_chatgpt_eco_analysis.py conversations.json
+# Claude Code — entire project directory
+python claude_chatgpt_eco_analysis.py ~/.claude/projects/my-project/
+
+# Claude Code — single session file
+python claude_chatgpt_eco_analysis.py ~/.claude/projects/my-project/abc123.jsonl
 ```
 
 ### Override Model (Single Model)
@@ -112,9 +116,9 @@ Real-world equivalents (midpoint estimates):
 
 ## How It Works
 
-1. **Export parsing**: Detects whether the JSON is from Claude.ai or ChatGPT
+1. **Export parsing**: Detects format automatically — Claude.ai JSON, ChatGPT JSON, or Claude Code JSONL
 2. **Model detection**: Extracts model info from message metadata; falls back to `--model` or `--mix` if needed
-3. **Token counting**: Uses `tiktoken` for accurate counts (word approximation if not installed)
+3. **Token counting**: Uses `tiktoken` for Claude.ai/ChatGPT exports (word approximation if not installed); Claude Code provides exact token counts from the API
 4. **Impact calculation**: Uses EcoLogits' LLM environmental impact library to estimate:
    - Energy per token (based on model architecture, latency, inference efficiency)
    - GHG emissions (from energy × electricity mix)
@@ -161,6 +165,15 @@ Real-world equivalents (midpoint estimates):
 3. Wait for the email (usually within hours)
 4. Download and extract `conversations.json`
 5. Run the analyzer on it
+
+### Claude Code
+
+No export needed — sessions are stored automatically at `~/.claude/projects/<project-name>/*.jsonl`. Pass a project directory to analyze all sessions, or a single `.jsonl` file for one session:
+
+```bash
+python claude_chatgpt_eco_analysis.py ~/.claude/projects/my-project/
+python claude_chatgpt_eco_analysis.py ~/.claude/projects/my-project/abc123.jsonl
+```
 
 ## Notes on Accuracy
 
