@@ -1192,6 +1192,11 @@ function extractClaudeMessages(conv, defaultLatency) {
     for (const block of (msg.content || [])) {
       if (block.type === 'text') {
         text += (block.text || '');
+      } else if (block.type === 'tool_use') {
+        // Artifact/tool content lives in block.input.content
+        text += (block.input?.content || '');
+      } else if (block.type === 'thinking') {
+        text += (block.thinking || '');
         try {
           const t0 = new Date(block.start_timestamp);
           const t1 = new Date(block.stop_timestamp);
