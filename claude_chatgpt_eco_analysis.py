@@ -68,6 +68,141 @@ except ImportError:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# UNIT FORMATTING
+# ════════════════════════════════════════════════════════════════════════════
+
+def fmt_energy(kwh: float) -> tuple[float, str]:
+    """
+    Convert kWh to the most readable unit.
+    Returns (value, unit_label).
+      <1 Wh      → mWh
+      1–999 Wh   → Wh
+      ≥1000 Wh   → kWh
+    """
+    wh = kwh * 1000
+    if wh < 1.0:
+        return wh * 1000, "mWh"
+    elif wh < 1000.0:
+        return wh, "Wh"
+    else:
+        return kwh, "kWh"
+
+def fmt_energy_str(kwh: float, decimals: int = 3) -> str:
+    v, u = fmt_energy(kwh)
+    return f"{v:.{decimals}f} {u}"
+
+def fmt_energy_range_str(mid_kwh: float, lo_kwh: float, hi_kwh: float) -> str:
+    """Format energy with range, using consistent units based on mid value."""
+    mid_v, u = fmt_energy(mid_kwh)
+    # Convert lo/hi to same unit
+    if u == "mWh":
+        lo_v = lo_kwh * 1e6
+        hi_v = hi_kwh * 1e6
+    elif u == "Wh":
+        lo_v = lo_kwh * 1000
+        hi_v = hi_kwh * 1000
+    else:
+        lo_v = lo_kwh
+        hi_v = hi_kwh
+    return f"{mid_v:.3f} {u}  [{lo_v:.3f}–{hi_v:.3f} {u}]"
+
+
+def fmt_ghg(kgco2: float) -> tuple[float, str]:
+    """
+    Convert kgCO₂eq to the most readable unit.
+      <1 g    → mg CO₂eq
+      1–999 g → g CO₂eq
+      ≥1 kg   → kg CO₂eq
+    """
+    g = kgco2 * 1000
+    if g < 1.0:
+        return g * 1000, "mg CO₂eq"
+    elif g < 1000.0:
+        return g, "g CO₂eq"
+    else:
+        return kgco2, "kg CO₂eq"
+
+def fmt_ghg_str(kgco2: float, decimals: int = 2) -> str:
+    v, u = fmt_ghg(kgco2)
+    return f"{v:.{decimals}f} {u}"
+
+def fmt_ghg_range_str(mid_kgco2: float, lo_kgco2: float, hi_kgco2: float) -> str:
+    mid_v, u = fmt_ghg(mid_kgco2)
+    if u == "mg CO₂eq":
+        lo_v = lo_kgco2 * 1e6
+        hi_v = hi_kgco2 * 1e6
+    elif u == "g CO₂eq":
+        lo_v = lo_kgco2 * 1000
+        hi_v = hi_kgco2 * 1000
+    else:
+        lo_v = lo_kgco2
+        hi_v = hi_kgco2
+    return f"{mid_v:.2f} {u}  [{lo_v:.2f}–{hi_v:.2f} {u}]"
+
+
+def fmt_water(liters: float) -> tuple[float, str]:
+    """
+    Convert liters to the most readable unit.
+      <1 mL   → µL  (sub-mL, rare)
+      1–9999 mL → mL
+      ≥10 L   → L
+    """
+    ml = liters * 1000
+    if ml < 1.0:
+        return ml * 1000, "µL"
+    elif ml < 10000.0:
+        return ml, "mL"
+    else:
+        return liters, "L"
+
+def fmt_water_str(liters: float, decimals: int = 1) -> str:
+    v, u = fmt_water(liters)
+    return f"{v:.{decimals}f} {u}"
+
+def fmt_water_range_str(mid_l: float, lo_l: float, hi_l: float) -> str:
+    mid_v, u = fmt_water(mid_l)
+    if u == "µL":
+        lo_v = lo_l * 1e6
+        hi_v = hi_l * 1e6
+    elif u == "mL":
+        lo_v = lo_l * 1000
+        hi_v = hi_l * 1000
+    else:
+        lo_v = lo_l
+        hi_v = hi_l
+    return f"{mid_v:.1f} {u}  [{lo_v:.1f}–{hi_v:.1f} {u}]"
+
+
+def _col_unit_label(kwh_values: list[float], col: str) -> tuple[str, str, float]:
+    """
+    For a table column, pick the best unit based on the median value,
+    and return (header_label, unit_suffix, scale_factor_from_kwh).
+    col is one of 'energy', 'ghg', 'water'.
+    """
+    if not kwh_values:
+        if col == "energy":   return "Energy (Wh)", "Wh", 1000.0
+        if col == "ghg":      return "GHG (g CO₂eq)", "g CO₂eq", 1000.0
+        if col == "water":    return "Water (mL)", "mL", 1000.0
+
+    vals = sorted(kwh_values)
+    median = vals[len(vals) // 2]
+
+    if col == "energy":
+        _, u = fmt_energy(median)
+        scale = {"mWh": 1e6, "Wh": 1e3, "kWh": 1.0}[u]
+        return f"Energy ({u})", u, scale
+    elif col == "ghg":
+        _, u = fmt_ghg(median)
+        scale = {"mg CO₂eq": 1e6, "g CO₂eq": 1e3, "kg CO₂eq": 1.0}[u]
+        return f"GHG ({u})", u, scale
+    elif col == "water":
+        _, u = fmt_water(median)
+        scale = {"µL": 1e6, "mL": 1e3, "L": 1.0}[u]
+        return f"Water ({u})", u, scale
+    return col, "", 1.0
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -725,32 +860,56 @@ def aggregate(results: list[RequestImpact]) -> tuple[AggImpact, dict, dict, dict
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# REAL-WORLD EQUIVALENTS
+# REAL-WORLD EQUIVALENTS  (metric + optional US customary)
 # ════════════════════════════════════════════════════════════════════════════
 
-def equivalents(agg: AggImpact) -> list[str]:
+def equivalents(agg: AggImpact, use_miles: bool = False, use_us_volume: bool = False) -> list[str]:
     """
     Generate real-world equivalents for energy and emissions.
     Uses midpoint estimates.
+    use_miles:     report distances in miles instead of km
+    use_us_volume: report water in fl oz / gallons instead of mL / L
     """
     items = []
 
-    # Energy: Wh
+    # ── Energy ──────────────────────────────────────────────────────────────
     wh = agg.energy_kwh * 1000
     if wh >= 1.0:
-        items.append(f"{wh:.1f} Wh — charging a phone ~{wh/5:.1f}×")
+        energy_str = fmt_energy_str(agg.energy_kwh, decimals=1)
+        items.append(f"{energy_str} — charging a phone ~{wh/5:.1f}×")
 
-    # GHG: gCO₂eq
+    # ── GHG ─────────────────────────────────────────────────────────────────
     gco2 = agg.gwp_kgco2 * 1000
     if gco2 >= 0.1:
-        km_driven = gco2 / 200  # ~200 gCO₂eq per km (avg car)
+        ghg_str = fmt_ghg_str(agg.gwp_kgco2, decimals=1)
+        if use_miles:
+            dist = gco2 / 322           # ~322 gCO₂eq/mile (avg US car ≈ 200 gCO₂/km × 1.609)
+            dist_label = f"{dist:.1f} mi"
+        else:
+            dist = gco2 / 200           # ~200 gCO₂eq/km
+            dist_label = f"{dist:.1f} km"
         tree_months = gco2 / 20  # ~20 gCO₂eq per month per mature tree
-        items.append(f"{gco2:.1f} gCO₂eq — driving {km_driven:.1f} km or {tree_months:.1f} tree-months offset")
+        items.append(f"{ghg_str} — driving {dist_label} or {tree_months:.1f} tree-months offset")
 
-    # Water: mL
+    # ── Water ────────────────────────────────────────────────────────────────
     ml = agg.water_l * 1000
     if ml >= 1.0:
-        items.append(f"{ml:.0f} mL — {ml/250:.1f}× a glass of water")
+        if use_us_volume:
+            fl_oz = ml / 29.5735
+            if fl_oz >= 128:           # ≥ 1 gallon
+                gal = fl_oz / 128
+                vol_str = f"{gal:.1f} gal"
+                equiv   = f"{fl_oz/128:.1f}× a gallon jug"
+            elif fl_oz >= 8:
+                vol_str = f"{fl_oz:.1f} fl oz"
+                equiv   = f"{fl_oz/8:.1f}× a cup of water"
+            else:
+                vol_str = f"{fl_oz:.2f} fl oz"
+                equiv   = f"{fl_oz/8:.2f}× a cup of water"
+        else:
+            vol_str = fmt_water_str(agg.water_l, decimals=1)
+            equiv   = f"{ml/250:.1f}× a glass of water"
+        items.append(f"{vol_str} — {equiv}")
 
     return items or ["(negligible impact)"]
 
@@ -759,8 +918,17 @@ def equivalents(agg: AggImpact) -> list[str]:
 # PRINTING
 # ════════════════════════════════════════════════════════════════════════════
 
+def _pick_decimal(v: float) -> int:
+    """Return sensible decimal places for a display value."""
+    if v == 0:      return 1
+    if v >= 100:    return 0
+    if v >= 10:     return 1
+    if v >= 1:      return 2
+    return 3
+
+
 def print_agg_table(title: str, aggs: dict, label_header: str = "Label", top_n: Optional[int] = None):
-    """Print an aggregated impact table (by model, month, etc.)."""
+    """Print an aggregated impact table with auto-scaled units chosen per column."""
     sorted_items = sorted(aggs.items(), key=lambda x: -x[1].gwp_kgco2)
     if top_n:
         sorted_items = sorted_items[:top_n]
@@ -769,61 +937,79 @@ def print_agg_table(title: str, aggs: dict, label_header: str = "Label", top_n: 
         console.print(f"[yellow]{title}: (no data)[/yellow]" if RICH else f"{title}: (no data)")
         return
 
+    # Determine best unit for each column based on all values in this table
+    energy_vals = [a.energy_kwh for _, a in sorted_items]
+    ghg_vals    = [a.gwp_kgco2  for _, a in sorted_items]
+    water_vals  = [a.water_l    for _, a in sorted_items]
+
+    e_hdr, _, e_scale = _col_unit_label(energy_vals, "energy")
+    g_hdr, _, g_scale = _col_unit_label(ghg_vals,    "ghg")
+    w_hdr, _, w_scale = _col_unit_label(water_vals,   "water")
+
     if RICH:
         t = Table(box=box.SIMPLE, padding=(0, 2))
         t.add_column(label_header, style="bold cyan")
-        t.add_column("Requests",  justify="right")
+        t.add_column("Requests",     justify="right")
         t.add_column("Output Tokens", justify="right")
-        t.add_column("Energy (mWh)", justify="right")
-        t.add_column("GHG (mgCO₂eq)", justify="right")
-        t.add_column("Water (mL)", justify="right")
+        t.add_column(e_hdr,          justify="right")
+        t.add_column(g_hdr,          justify="right")
+        t.add_column(w_hdr,          justify="right")
         for label, agg in sorted_items:
             disp_label = label.split("|", 1)[-1] if "|" in label else label
+            ev = agg.energy_kwh * e_scale
+            gv = agg.gwp_kgco2  * g_scale
+            wv = agg.water_l    * w_scale
             t.add_row(
                 disp_label,
                 f"{agg.requests}",
                 f"{agg.output_tokens:,}",
-                f"{agg.energy_kwh*1e6:.1f}",
-                f"{agg.gwp_kgco2*1e6:.0f}",
-                f"{agg.water_l*1000:.1f}",
+                f"{ev:.{_pick_decimal(ev)}f}",
+                f"{gv:.{_pick_decimal(gv)}f}",
+                f"{wv:.{_pick_decimal(wv)}f}",
             )
         console.print(t)
     else:
         print(f"\n{title}:")
+        header = (f"  {'Label':<40} | {'Req':>5} | {'Tokens':>10} | "
+                  f"{e_hdr:>14} | {g_hdr:>16} | {w_hdr:>12}")
+        print(header)
+        print("  " + "─" * (len(header) - 2))
         for label, agg in sorted_items:
             disp_label = label.split("|", 1)[-1] if "|" in label else label
-            print(f"  {disp_label:<40} | {agg.requests:>5} req | "
-                  f"{agg.output_tokens:>10,} tkn | {agg.energy_kwh*1e6:>10.1f} mWh | "
-                  f"{agg.gwp_kgco2*1e6:>12.0f} mgCO₂")
+            ev = agg.energy_kwh * e_scale
+            gv = agg.gwp_kgco2  * g_scale
+            wv = agg.water_l    * w_scale
+            print(f"  {disp_label:<40} | {agg.requests:>5} | "
+                  f"{agg.output_tokens:>10,} | "
+                  f"{ev:>14.{_pick_decimal(ev)}f} | "
+                  f"{gv:>16.{_pick_decimal(gv)}f} | "
+                  f"{wv:>12.{_pick_decimal(wv)}f}")
 
 
-def print_cumulative(agg: AggImpact):
+def print_cumulative(agg: AggImpact, use_miles: bool = False, use_us_volume: bool = False):
     console.rule("CUMULATIVE TOTALS")
     rows = [
         ("Conversations / Requests",  f"{agg.requests}"),
         ("Output tokens generated",   f"{agg.output_tokens:,}"),
-        ("Energy consumed",           f"{agg.energy_kwh*1000:.3f} Wh  "
-                                      f"[{agg.energy_lo*1000:.3f}–{agg.energy_hi*1000:.3f} Wh]"),
-        ("GHG emissions",             f"{agg.gwp_kgco2*1000:.2f} gCO₂eq  "
-                                      f"[{agg.gwp_lo*1000:.2f}–{agg.gwp_hi*1000:.2f}]"),
-        ("Water consumption",         f"{agg.water_l*1000:.1f} mL  "
-                                      f"[{agg.water_lo*1000:.1f}–{agg.water_hi*1000:.1f}]"),
+        ("Energy consumed",           fmt_energy_range_str(agg.energy_kwh, agg.energy_lo, agg.energy_hi)),
+        ("GHG emissions",             fmt_ghg_range_str(agg.gwp_kgco2, agg.gwp_lo, agg.gwp_hi)),
+        ("Water consumption",         fmt_water_range_str(agg.water_l, agg.water_lo, agg.water_hi)),
     ]
     if RICH:
-        t = Table(box=box.SIMPLE, show_header=False, padding=(0,2))
+        t = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
         t.add_column("Metric", style="bold green")
         t.add_column("Value")
         for k, v in rows:
             t.add_row(k, v)
         console.print(t)
         console.print("\n[bold]Real-world equivalents (midpoint estimates):[/bold]")
-        for e in equivalents(agg):
+        for e in equivalents(agg, use_miles=use_miles, use_us_volume=use_us_volume):
             console.print(f"  • {e}")
     else:
         for k, v in rows:
             print(f"  {k:<35} {v}")
         print("\nReal-world equivalents (midpoint estimates):")
-        for e in equivalents(agg):
+        for e in equivalents(agg, use_miles=use_miles, use_us_volume=use_us_volume):
             print(f"  • {e}")
 
 
@@ -1041,10 +1227,24 @@ LEARN MORE
     parser.add_argument("--mix",
         help='Weighted model mix, e.g. "gpt-4o-2024-05-13:75,gpt-3-5-turbo:25". '
              "Cannot be combined with --model.")
+
+    # ── unit flags ────────────────────────────────────────────────────────────
+    unit_group = parser.add_argument_group(
+        "units (affect real-world equivalents only; scientific values always use auto-scaled SI)")
+    unit_group.add_argument("--miles",     action="store_true",
+        help="Use miles instead of kilometres for driving distance equivalents")
+    unit_group.add_argument("--us-volume", action="store_true", dest="us_volume",
+        help="Use fl oz / gallons instead of mL / L for water equivalents")
+    unit_group.add_argument("--us",        action="store_true",
+        help="Shorthand for --miles and --us-volume combined")
+
     args = parser.parse_args()
 
     if args.model and args.mix:
         parser.error("--model and --mix are mutually exclusive.")
+
+    use_miles     = args.miles or args.us
+    use_us_volume = args.us_volume or args.us
 
     model_mix = None
     if args.mix:
@@ -1094,7 +1294,7 @@ LEARN MORE
     cumulative, by_conv, by_week, by_month, by_model = aggregate(results)
 
     # ── print ────────────────────────────────────────────────────────────────
-    print_cumulative(cumulative)
+    print_cumulative(cumulative, use_miles=use_miles, use_us_volume=use_us_volume)
 
     console.rule("BY MODEL")
     print_agg_table("Model breakdown", by_model, label_header="Model")
