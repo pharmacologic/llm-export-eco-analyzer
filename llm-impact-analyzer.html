@@ -744,7 +744,10 @@
       <label>Default Latency (seconds)</label>
       <input type="number" id="default-latency" value="30" min="1" max="300" step="1">
     </div>
-    <div class="field-group" style="justify-content:flex-end">
+    <div class="field-group" style="justify-content:flex-end;gap:10px;flex-direction:row;align-items:center">
+      <label style="text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="us-units"> US units
+      </label>
       <button class="btn-analyze" id="analyze-btn" disabled>Analyze File</button>
     </div>
   </div>
@@ -1475,7 +1478,7 @@ function formatSig(v) {
 // REAL-WORLD EQUIVALENTS
 // ═══════════════════════════════════════════════════════════════════
 
-function buildEquivalents(agg) {
+function buildEquivalents(agg, usUnits = false) {
   const items = [];
   const wh = agg.energy * 1000;
   const gco2 = agg.gwp * 1000;
@@ -1486,12 +1489,27 @@ function buildEquivalents(agg) {
     items.push({ icon: '📱', num: charges.toFixed(charges < 10 ? 1 : 0), label: 'smartphone charges (5 Wh each)' });
   }
   if (gco2 >= 0.01) {
-    const km = gco2 / 200;   // 200 gCO₂eq/km avg car
-    if (km >= 0.01) items.push({ icon: '🚗', num: km < 1 ? km.toFixed(0)+'m' : km.toFixed(km<10?2:1)+'km', label: 'driven by average car' });
+    if (usUnits) {
+      const miles = gco2 / 322;  // ~322 gCO₂eq/mile (avg US car)
+      if (miles >= 0.01) items.push({ icon: '🚗', num: miles.toFixed(miles < 10 ? 2 : 1), label: 'miles driven by average car' });
+    } else {
+      const km = gco2 / 200;    // ~200 gCO₂eq/km avg car
+      if (km >= 0.01) items.push({ icon: '🚗', num: km < 1 ? km.toFixed(0)+'m' : km.toFixed(km<10?2:1)+'km', label: 'driven by average car' });
+    }
   }
   if (ml >= 1) {
-    const glasses = ml / 250;
-    items.push({ icon: '💧', num: glasses.toFixed(glasses < 10 ? 1 : 0), label: 'glasses of water (250 mL)' });
+    if (usUnits) {
+      const flOz = ml / 29.5735;
+      if (flOz >= 128) {
+        const gal = flOz / 128;
+        items.push({ icon: '💧', num: gal.toFixed(gal < 10 ? 1 : 0), label: 'gallons of water' });
+      } else {
+        items.push({ icon: '💧', num: flOz.toFixed(flOz < 10 ? 1 : 0), label: 'fl oz of water (8 fl oz per cup)' });
+      }
+    } else {
+      const glasses = ml / 250;
+      items.push({ icon: '💧', num: glasses.toFixed(glasses < 10 ? 1 : 0), label: 'glasses of water (250 mL)' });
+    }
   }
   return items;
 }
@@ -1745,7 +1763,8 @@ function renderSummary(cumulative, exportType, resultCount) {
     </div>
   `;
 
-  const equivs = buildEquivalents(cumulative);
+  const usUnits = document.getElementById('us-units').checked;
+  const equivs = buildEquivalents(cumulative, usUnits);
   document.getElementById('equivalents-row').innerHTML = equivs.map(eq =>
     `<div class="equiv-chip">${eq.icon} <span class="equiv-num">≈ ${eq.num}</span> ${eq.label}</div>`
   ).join('');
