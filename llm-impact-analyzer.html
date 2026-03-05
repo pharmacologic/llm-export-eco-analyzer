@@ -115,20 +115,26 @@
   }
 
   /* ── UPLOAD ZONE ── */
-  #upload-zone {
+  #upload-area {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .upload-zone {
+    flex: 1;
     border: 1.5px dashed var(--border);
     border-radius: 8px;
-    padding: 52px 24px;
+    padding: 40px 20px;
     text-align: center;
     cursor: pointer;
     transition: all 0.2s;
     background: var(--surface);
-    margin-bottom: 28px;
     position: relative;
     overflow: hidden;
   }
 
-  #upload-zone::before {
+  .upload-zone::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -136,23 +142,23 @@
     pointer-events: none;
   }
 
-  #upload-zone:hover, #upload-zone.drag-over {
+  .upload-zone:hover, .upload-zone.drag-over {
     border-color: var(--accent);
     background: #0f1a0f;
   }
 
-  #upload-zone.drag-over { border-style: solid; }
+  .upload-zone.drag-over { border-style: solid; }
 
   .upload-icon {
-    width: 48px;
-    height: 48px;
-    margin: 0 auto 16px;
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 14px;
     color: var(--muted);
   }
 
   .upload-title {
     font-family: var(--font-display);
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
     color: var(--text);
     margin-bottom: 6px;
@@ -168,7 +174,7 @@
     font-weight: 400;
   }
 
-  #file-input { display: none; }
+  .file-input { display: none; }
 
   /* ── SETTINGS PANEL ── */
   .settings-panel {
@@ -651,7 +657,7 @@
       </div>
       <div>
         <h1>LLM Environmental Impact Analyzer</h1>
-        <div class="header-sub">Claude.ai &amp; ChatGPT · Powered by EcoLogits methodology</div>
+        <div class="header-sub">Claude &amp; ChatGPT · Powered by EcoLogits methodology</div>
       </div>
       <div class="header-badge">100% client-side · no data uploaded</div>
     </div>
@@ -660,16 +666,30 @@
   <div id="error-box" class="error-box" style="display:none"></div>
 
   <!-- UPLOAD -->
-  <div id="upload-zone">
-    <div class="upload-icon">
-      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M8 36 L8 40 Q8 42 10 42 L38 42 Q40 42 40 40 L40 36"/>
-        <path d="M24 6 L24 32 M16 14 L24 6 L32 14"/>
-      </svg>
+  <div id="upload-area">
+    <div class="upload-zone" id="upload-zone-export">
+      <div class="upload-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 36 L8 40 Q8 42 10 42 L38 42 Q40 42 40 40 L40 36"/>
+          <path d="M24 6 L24 32 M16 14 L24 6 L32 14"/>
+        </svg>
+      </div>
+      <div class="upload-title">Drop your conversations.json here</div>
+      <div class="upload-sub">or <span>click to browse</span> · Claude.ai and ChatGPT exports</div>
+      <input type="file" id="file-input-export" class="file-input" accept=".json">
     </div>
-    <div class="upload-title">Drop your conversations.json here</div>
-    <div class="upload-sub">or <span>click to browse</span> · Claude.ai and ChatGPT exports both supported</div>
-    <input type="file" id="file-input" accept=".json">
+    <div class="upload-zone" id="upload-zone-code">
+      <div class="upload-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="6" y="6" width="36" height="36" rx="4"/>
+          <path d="M16 20 L10 24 L16 28 M32 20 L38 24 L32 28 M26 16 L22 32"/>
+        </svg>
+      </div>
+      <div class="upload-title">Drop Claude Code sessions here</div>
+      <div class="upload-sub">drop .jsonl or folder · or browse <span id="browse-code-files">files</span> / <span id="browse-code-folder">folder</span></div>
+      <input type="file" id="file-input-code-file" class="file-input" accept=".jsonl" multiple>
+      <input type="file" id="file-input-code-dir" class="file-input" webkitdirectory multiple>
+    </div>
   </div>
 
   <div class="privacy-note">
@@ -917,6 +937,7 @@ const MODEL_QUANT_BITS     = 16;
 const DATACENTER_PUE       = 1.2;
 const DATACENTER_WUE       = 0.0;
 const DEFAULT_LATENCY_SECS = 30.0;
+const DEFAULT_LATENCY_CC   = 30.0;  // Claude Code sessions lack per-request latency
 
 // ═══════════════════════════════════════════════════════════════════
 // MODEL REGISTRY
@@ -1236,6 +1257,121 @@ function extractChatGPTMessages(conv, defaultLatency) {
     if (node && node.parent === null) { traverse(id); break; }
   }
   return msgs;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CLAUDE CODE SESSION PROCESSING
+// ═══════════════════════════════════════════════════════════════════
+
+function sessionNameFromEntries(entries) {
+  for (const e of entries) {
+    if (e.type !== 'user') continue;
+    const content = e.message?.content;
+    if (typeof content === 'string' && content.trim()) {
+      const t = content.trim().replace(/\n/g, ' ');
+      return t.length > 70 ? t.slice(0, 70) + '…' : t;
+    }
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block.type === 'text' && block.text?.trim()) {
+          const t = block.text.trim().replace(/\n/g, ' ');
+          return t.length > 70 ? t.slice(0, 70) + '…' : t;
+        }
+      }
+    }
+  }
+  // Fall back to cwd project name
+  for (const e of entries) {
+    if (e.cwd) return e.cwd.split('/').filter(Boolean).pop() || 'unnamed session';
+  }
+  return 'unnamed session';
+}
+
+async function processClaudeCodeSessions(files, zone, overrideModel, onProgress) {
+  const elecMix = ELECTRICITY_MIXES[zone] || ELECTRICITY_MIXES['WOR'];
+  const results  = [];
+  const warnings = [];
+  let skipped = 0;
+
+  for (let fi = 0; fi < files.length; fi++) {
+    onProgress(fi / files.length, `Reading session ${fi + 1} of ${files.length}…`);
+    await new Promise(r => setTimeout(r, 0));
+
+    const file = files[fi];
+    const text = await file.text();
+    const entries = text.split('\n').filter(l => l.trim()).map(l => {
+      try { return JSON.parse(l); } catch { return null; }
+    }).filter(Boolean);
+
+    const convId   = file.name.replace(/\.jsonl$/, '');
+    const convName = sessionNameFromEntries(entries);
+
+    for (const entry of entries) {
+      if (entry.type !== 'assistant') continue;
+      const msg = entry.message || {};
+      if (!['end_turn', 'tool_use'].includes(msg.stop_reason)) continue;
+
+      const outputTokens = msg.usage?.output_tokens || 0;
+      if (outputTokens === 0) { skipped++; continue; }
+
+      const tsStr = entry.timestamp || '';
+      const ts = tsStr ? new Date(tsStr) : new Date();
+
+      // Model resolution
+      const rawModel = msg.model || '';
+      let modelName = overrideModel
+        || (rawModel && rawModel !== '<synthetic>' ? (CLAUDE_MODEL_MAP[rawModel] || rawModel) : null)
+        || 'claude-sonnet-4-20250514';
+
+      const toTry = [modelName, ...ANTHROPIC_FALLBACKS.filter(f => f !== modelName)];
+      let params = null, usedModel = modelName;
+      for (const mn of toTry) {
+        params = getModelParams('anthropic', mn);
+        if (params) { usedModel = mn; break; }
+      }
+
+      if (!params) {
+        skipped++;
+        const warnKey = `no-model::${modelName}`;
+        if (!warnings._seen) warnings._seen = new Set();
+        if (!warnings._seen.has(warnKey)) {
+          warnings._seen.add(warnKey);
+          warnings.push(`No model data for: ${modelName}, skipped entries with this model`);
+        }
+        continue;
+      }
+
+      try {
+        const impacts = computeImpacts(
+          params.activeParams, params.totalParams,
+          outputTokens, DEFAULT_LATENCY_CC, elecMix
+        );
+        results.push({
+          convId, convName, ts,
+          model: usedModel,
+          provider: 'anthropic',
+          tokens: outputTokens,
+          energy: impacts.energy,
+          gwp:    impacts.gwp,
+          water:  impacts.wcf,
+          hasArchWarn: params.warnings.includes('model-arch-not-released'),
+        });
+      } catch(e) {
+        skipped++;
+        warnings.push(`Calculation error: ${e.message}`);
+      }
+    }
+  }
+
+  if (skipped > 0) warnings.push(`Skipped ${skipped} entries (no output tokens or unsupported model).`);
+
+  const hasArchWarn = results.some(r => r.hasArchWarn);
+  if (hasArchWarn) {
+    warnings.unshift('⚠ Some models have undisclosed architectures — estimates use parameter range bounds. Expect lower precision.');
+  }
+
+  onProgress(1.0, 'Done!');
+  return { results, warnings, exportType: 'claude-code' };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1730,7 +1866,7 @@ function renderSummary(cumulative, exportType, resultCount) {
   const g = fmtGWP(cumulative.gwp, cumulative.gwpLo, cumulative.gwpHi);
   const w = fmtWater(cumulative.water, cumulative.waterLo, cumulative.waterHi);
 
-  const exportLabel = exportType === 'chatgpt' ? 'ChatGPT' : exportType === 'claude' ? 'Claude.ai' : 'Mixed';
+  const exportLabel = exportType === 'chatgpt' ? 'ChatGPT' : exportType === 'claude-code' ? 'Claude Code' : exportType === 'claude' ? 'Claude.ai' : 'Mixed';
 
   document.getElementById('summary-cards').innerHTML = `
     <div class="stat-card">
@@ -1803,10 +1939,14 @@ function exportJSON(aggData, cumulative) {
 // UI WIRING
 // ═══════════════════════════════════════════════════════════════════
 
-let loadedFile = null;
+let loadedFile    = null;  // conversations.json (export zone)
+let loadedCCFiles = null;  // array of .jsonl File objects (code zone)
 
-const uploadZone = document.getElementById('upload-zone');
-const fileInput  = document.getElementById('file-input');
+const zoneExport     = document.getElementById('upload-zone-export');
+const zoneCode       = document.getElementById('upload-zone-code');
+const fileInputExport = document.getElementById('file-input-export');
+const fileInputCodeFile = document.getElementById('file-input-code-file');
+const fileInputCodeDir  = document.getElementById('file-input-code-dir');
 const analyzeBtn = document.getElementById('analyze-btn');
 const errorBox   = document.getElementById('error-box');
 const progressSection = document.getElementById('progress-section');
@@ -1815,63 +1955,157 @@ const progressLabel   = document.getElementById('progress-label');
 const resultsSection  = document.getElementById('results-section');
 const warningsSection = document.getElementById('warnings-section');
 
-uploadZone.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
-
-uploadZone.addEventListener('dragover', e => {
-  e.preventDefault(); uploadZone.classList.add('drag-over');
-});
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', e => {
-  e.preventDefault(); uploadZone.classList.remove('drag-over');
-  handleFile(e.dataTransfer.files[0]);
+// ── Export zone (conversations.json) ──
+zoneExport.addEventListener('click', () => fileInputExport.click());
+fileInputExport.addEventListener('change', e => handleExportFile(e.target.files[0]));
+zoneExport.addEventListener('dragover', e => { e.preventDefault(); zoneExport.classList.add('drag-over'); });
+zoneExport.addEventListener('dragleave', () => zoneExport.classList.remove('drag-over'));
+zoneExport.addEventListener('drop', e => {
+  e.preventDefault(); zoneExport.classList.remove('drag-over');
+  handleExportFile(e.dataTransfer.files[0]);
 });
 
-function handleFile(file) {
+function handleExportFile(file) {
   if (!file) return;
   if (!file.name.endsWith('.json')) {
     showError('Please upload a .json file (conversations.json from Claude.ai or ChatGPT export).');
     return;
   }
   loadedFile = file;
-  uploadZone.querySelector('.upload-title').textContent = `✓ ${file.name}`;
-  uploadZone.querySelector('.upload-sub').innerHTML = `<span>${(file.size / 1024 / 1024).toFixed(1)} MB</span> · click to change file`;
+  loadedCCFiles = null;
+  resetCodeZone();
+  zoneExport.querySelector('.upload-title').textContent = `✓ ${file.name}`;
+  zoneExport.querySelector('.upload-sub').innerHTML = `<span>${(file.size / 1024 / 1024).toFixed(1)} MB</span> · click to change`;
   analyzeBtn.disabled = false;
   hideError();
 }
 
+// ── Code zone (Claude Code .jsonl) ──
+zoneCode.addEventListener('click', e => {
+  // Only trigger if user didn't click a browse span
+  if (!e.target.closest('span[id^="browse-code"]')) fileInputCodeFile.click();
+});
+document.getElementById('browse-code-files').addEventListener('click', e => {
+  e.stopPropagation(); fileInputCodeFile.click();
+});
+document.getElementById('browse-code-folder').addEventListener('click', e => {
+  e.stopPropagation(); fileInputCodeDir.click();
+});
+fileInputCodeFile.addEventListener('change', e => handleCodeFiles(Array.from(e.target.files)));
+fileInputCodeDir.addEventListener('change', e => {
+  const jsonl = Array.from(e.target.files).filter(f => f.name.endsWith('.jsonl'));
+  handleCodeFiles(jsonl);
+});
+
+zoneCode.addEventListener('dragover', e => { e.preventDefault(); zoneCode.classList.add('drag-over'); });
+zoneCode.addEventListener('dragleave', () => zoneCode.classList.remove('drag-over'));
+zoneCode.addEventListener('drop', async e => {
+  e.preventDefault(); zoneCode.classList.remove('drag-over');
+  const files = await collectJsonlFromDrop(e.dataTransfer);
+  handleCodeFiles(files);
+});
+
+async function collectJsonlFromDrop(dataTransfer) {
+  const files = [];
+  const queue = [];
+  for (const item of dataTransfer.items) {
+    const entry = item.webkitGetAsEntry?.();
+    if (entry) queue.push(entry);
+  }
+  async function readDir(dirEntry) {
+    const reader = dirEntry.createReader();
+    await new Promise(resolve => {
+      reader.readEntries(async entries => {
+        for (const entry of entries) {
+          if (entry.isFile && entry.name.endsWith('.jsonl')) {
+            await new Promise(res => entry.file(f => { files.push(f); res(); }));
+          } else if (entry.isDirectory) {
+            await readDir(entry);
+          }
+        }
+        resolve();
+      });
+    });
+  }
+  for (const entry of queue) {
+    if (entry.isFile && entry.name.endsWith('.jsonl')) {
+      await new Promise(res => entry.file(f => { files.push(f); res(); }));
+    } else if (entry.isDirectory) {
+      await readDir(entry);
+    }
+  }
+  return files;
+}
+
+function handleCodeFiles(files) {
+  if (!files.length) {
+    showError('No .jsonl files found. Drop a .jsonl file or a Claude Code project folder.');
+    return;
+  }
+  loadedCCFiles = files;
+  loadedFile = null;
+  resetExportZone();
+  const label = files.length === 1 ? files[0].name : `${files.length} session files`;
+  zoneCode.querySelector('.upload-title').textContent = `✓ ${label}`;
+  zoneCode.querySelector('.upload-sub').innerHTML = `<span>${files.length} session(s)</span> · click to change`;
+  analyzeBtn.disabled = false;
+  hideError();
+}
+
+function resetExportZone() {
+  zoneExport.querySelector('.upload-title').textContent = 'Drop your conversations.json here';
+  zoneExport.querySelector('.upload-sub').innerHTML = `or <span>click to browse</span> · Claude.ai and ChatGPT exports`;
+  fileInputExport.value = '';
+}
+
+function resetCodeZone() {
+  zoneCode.querySelector('.upload-title').textContent = 'Drop Claude Code sessions here';
+  zoneCode.querySelector('.upload-sub').innerHTML = `drop .jsonl or folder · or browse <span id="browse-code-files">files</span> / <span id="browse-code-folder">folder</span>`;
+  fileInputCodeFile.value = '';
+  fileInputCodeDir.value = '';
+  // Re-attach listeners since innerHTML replaced the spans
+  document.getElementById('browse-code-files').addEventListener('click', e => { e.stopPropagation(); fileInputCodeFile.click(); });
+  document.getElementById('browse-code-folder').addEventListener('click', e => { e.stopPropagation(); fileInputCodeDir.click(); });
+}
+
 analyzeBtn.addEventListener('click', async () => {
-  if (!loadedFile) return;
+  if (!loadedFile && !loadedCCFiles) return;
   analyzeBtn.disabled = true;
   hideError();
   warningsSection.style.display = 'none';
   resultsSection.style.display = 'none';
   progressSection.style.display = 'block';
 
+  const zone = document.getElementById('zone-select').value;
+  const overrideModel = document.getElementById('model-override').value.trim() || null;
+  const onProgress = (pct, msg) => {
+    progressBar.style.width = (pct * 100) + '%';
+    progressLabel.textContent = msg;
+  };
+
   try {
-    const text = await loadedFile.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch(e) {
-      throw new Error('Invalid JSON file. Please check the file is a valid conversations export.');
-    }
+    let results, warnings, exportType;
 
-    if (!Array.isArray(data)) {
-      throw new Error('Expected a JSON array at the top level. Please ensure this is a conversations.json export.');
-    }
-
-    const zone = document.getElementById('zone-select').value;
-    const overrideModel = document.getElementById('model-override').value.trim() || null;
-    const defaultLatency = parseFloat(document.getElementById('default-latency').value) || 30;
-
-    const { results, warnings, exportType } = await processConversations(
-      data, zone, overrideModel, defaultLatency,
-      (pct, msg) => {
-        progressBar.style.width = (pct * 100) + '%';
-        progressLabel.textContent = msg;
+    if (loadedCCFiles) {
+      ({ results, warnings, exportType } = await processClaudeCodeSessions(
+        loadedCCFiles, zone, overrideModel, onProgress
+      ));
+    } else {
+      const text = await loadedFile.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch(e) {
+        throw new Error('Invalid JSON file. Please check the file is a valid conversations export.');
       }
-    );
+      if (!Array.isArray(data)) {
+        throw new Error('Expected a JSON array at the top level. Please ensure this is a conversations.json export.');
+      }
+      const defaultLatency = parseFloat(document.getElementById('default-latency').value) || 30;
+      ({ results, warnings, exportType } = await processConversations(
+        data, zone, overrideModel, defaultLatency, onProgress
+      ));
+    }
 
     progressSection.style.display = 'none';
 
@@ -1945,14 +2179,14 @@ document.getElementById('conv-page-size').addEventListener('change', e => {
 
 // ── Reset ──
 document.getElementById('reset-link').addEventListener('click', () => {
-  loadedFile = null;
+  loadedFile    = null;
+  loadedCCFiles = null;
   analyzeBtn.disabled = true;
   resultsSection.style.display = 'none';
   warningsSection.style.display = 'none';
   progressSection.style.display = 'none';
-  uploadZone.querySelector('.upload-title').textContent = 'Drop your conversations.json here';
-  uploadZone.querySelector('.upload-sub').innerHTML = `or <span>click to browse</span> · Claude.ai and ChatGPT exports both supported`;
-  fileInput.value = '';
+  resetExportZone();
+  resetCodeZone();
   hideError();
   lastAggData = null;
 });
