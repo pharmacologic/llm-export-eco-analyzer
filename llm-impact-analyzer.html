@@ -1603,8 +1603,8 @@ function fmtWater(liters, lo_l, hi_l) {
 }
 
 function fmtTokens(n) {
-  if (n >= 1e6)      return (n / 1e6).toFixed(n >= 10e6 ? 1 : 2) + 'M';
-  if (n >= 1000)     return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K';
+  if (n >= 1e6)  return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
   return n.toLocaleString();
 }
 
@@ -1636,7 +1636,12 @@ function buildEquivalents(agg, usUnits = false) {
       if (miles >= 0.01) items.push({ icon: '🚗', num: miles.toFixed(miles < 10 ? 2 : 1), label: 'miles driven by average car' });
     } else {
       const km = gco2 / 200;    // ~200 gCO₂eq/km avg car
-      if (km >= 0.01) items.push({ icon: '🚗', num: km < 1 ? km.toFixed(0)+'m' : km.toFixed(km<10?2:1)+'km', label: 'driven by average car' });
+      if (km >= 0.01) {
+        const distStr = km < 1
+          ? Math.round(km * 1000) + 'm'
+          : km.toFixed(km < 10 ? 2 : 1) + 'km';
+        items.push({ icon: '🚗', num: distStr, label: 'driven by average car' });
+      }
     }
   }
   if (ml >= 1) {
@@ -1900,7 +1905,7 @@ function renderSummary(cumulative, exportType, resultCount) {
     </div>
     <div class="stat-card">
       <div class="stat-label">Output Tokens</div>
-      <div class="stat-value" style="font-size:18px">${fmtTokens(cumulative.tokens)}</div>
+      <div class="stat-value">${fmtTokens(cumulative.tokens)}</div>
       <div class="stat-unit">output tokens generated</div>
     </div>
   `;
@@ -2133,6 +2138,8 @@ analyzeBtn.addEventListener('click', async () => {
 
     // Store for export
     document.getElementById('export-json-btn').onclick = () => exportJSON(aggData, aggData.cumulative);
+
+    analyzeBtn.disabled = false;
 
   } catch(e) {
     progressSection.style.display = 'none';
