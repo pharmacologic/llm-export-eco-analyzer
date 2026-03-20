@@ -1045,44 +1045,51 @@ def parse_conversations(
 # AGGREGATION
 # ════════════════════════════════════════════════════════════════════════════
 
-def aggregate(results: list[RequestImpact]) -> tuple[AggImpact, dict, dict, dict, dict]:
+def aggregate(results: list[RequestImpact]) -> tuple[AggImpact, dict, dict, dict, dict, dict]:
     """
     Aggregate RequestImpacts into cumulative, by-conversation, by-week, by-month,
-    and by-model summaries.
+    by-day, and by-model summaries.
     """
     cumulative = AggImpact()
     by_conv    = {}
     by_week    = {}
     by_month   = {}
+    by_day     = {}
     by_model   = {}
 
     for r in results:
         cumulative.add(r)
-        
+
         # By conversation
         conv_label = f"{r.conversation_id}|{r.conversation_name}"
         if conv_label not in by_conv:
             by_conv[conv_label] = AggImpact()
         by_conv[conv_label].add(r)
-        
+
         # By week (ISO week)
         week_label = r.timestamp.strftime("%Y-W%V")
         if week_label not in by_week:
             by_week[week_label] = AggImpact()
         by_week[week_label].add(r)
-        
+
         # By month
         month_label = r.timestamp.strftime("%Y-%m")
         if month_label not in by_month:
             by_month[month_label] = AggImpact()
         by_month[month_label].add(r)
-        
+
+        # By day
+        day_label = r.timestamp.strftime("%Y-%m-%d")
+        if day_label not in by_day:
+            by_day[day_label] = AggImpact()
+        by_day[day_label].add(r)
+
         # By model
         if r.model not in by_model:
             by_model[r.model] = AggImpact()
         by_model[r.model].add(r)
 
-    return cumulative, by_conv, by_week, by_month, by_model
+    return cumulative, by_conv, by_week, by_month, by_day, by_model
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1253,13 +1260,14 @@ def to_serializable(agg: AggImpact) -> dict:
     }
 
 
-def build_json_report(results, cumulative, by_conv, by_week, by_month, by_model):
+def build_json_report(results, cumulative, by_conv, by_week, by_month, by_day, by_model):
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "cumulative": to_serializable(cumulative),
         "by_model": {k: to_serializable(v) for k, v in sorted(by_model.items())},
         "by_month": {k: to_serializable(v) for k, v in sorted(by_month.items())},
         "by_week":  {k: to_serializable(v) for k, v in sorted(by_week.items())},
+        "by_day":   {k: to_serializable(v) for k, v in sorted(by_day.items())},
         "by_conversation": {
             label.split("|", 1)[-1]: to_serializable(agg)
             for label, agg in sorted(by_conv.items(), key=lambda x: -x[1].gwp_kgco2)
@@ -1474,6 +1482,8 @@ LEARN MORE
         help="Use fl oz / gallons instead of mL / L for water equivalents")
     unit_group.add_argument("--us",        action="store_true",
         help="Shorthand for --miles and --us-volume combined")
+    parser.add_argument("--by-day", action="store_true", dest="by_day",
+        help="Print a daily breakdown table (can be long)")
 
     args = parser.parse_args()
 
@@ -1541,7 +1551,7 @@ LEARN MORE
                       if RICH else "No results — no assistant messages found.")
         sys.exit(0)
 
-    cumulative, by_conv, by_week, by_month, by_model = aggregate(results)
+    cumulative, by_conv, by_week, by_month, by_day, by_model = aggregate(results)
 
     # ── print ────────────────────────────────────────────────────────────────
     print_cumulative(cumulative, use_miles=use_miles, use_us_volume=use_us_volume)
@@ -1554,6 +1564,10 @@ LEARN MORE
 
     console.rule("BY WEEK")
     print_agg_table("Weekly breakdown", by_week, label_header="ISO Week")
+
+    if args.by_day:
+        console.rule("BY DAY")
+        print_agg_table("Daily breakdown", by_day, label_header="Date")
 
     console.rule("BY CONVERSATION (top {})".format(args.top))
     print_agg_table(
@@ -1579,7 +1593,7 @@ LEARN MORE
 
     # ── save JSON ─────────────────────────────────────────────────────────────
     if args.output:
-        report = build_json_report(results, cumulative, by_conv, by_week, by_month, by_model)
+        report = build_json_report(results, cumulative, by_conv, by_week, by_month, by_day, by_model)
         out_path = Path(args.output)
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, default=str)

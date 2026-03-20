@@ -476,6 +476,21 @@
     font-style: italic;
   }
 
+  /* ── ACCORDION ROWS ── */
+  tr.row-parent { cursor: pointer; }
+  tr.row-parent .expand-icon {
+    display: inline-block;
+    width: 16px;
+    font-size: 9px;
+    color: var(--text3);
+    user-select: none;
+  }
+  tr.row-parent.expanded .expand-icon { color: var(--accent); }
+  tr.row-child { background: rgba(0,0,0,0.18); }
+  tr.row-child td.label { padding-left: 30px; }
+  tr.row-child td { color: var(--text3); font-size: 11px; }
+  tr.row-child:hover { background: rgba(0,0,0,0.28) !important; }
+
   /* ── SORT/FILTER CONTROLS ── */
   .ctrl-btn {
     background: var(--surface2);
@@ -660,6 +675,9 @@
         <div class="header-sub">Claude &amp; ChatGPT · Powered by EcoLogits methodology</div>
       </div>
       <div class="header-badge">100% client-side · no data uploaded</div>
+      <a href="https://github.com/pharmacologic/llm-export-eco-analyzer" target="_blank" rel="noopener" style="margin-left:8px;display:flex;align-items:center;color:var(--text3);text-decoration:none;flex-shrink:0" title="View on GitHub">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
     </div>
   </header>
 
@@ -1519,6 +1537,7 @@ function aggregate(results) {
   const byModel = new Map();
   const byMonth = new Map();
   const byWeek  = new Map();
+  const byDay   = new Map();
   const byConv  = new Map();
 
   for (const r of results) {
@@ -1535,12 +1554,16 @@ function aggregate(results) {
     if (!byWeek.has(weekKey)) byWeek.set(weekKey, mkAgg());
     addToAgg(byWeek.get(weekKey), r);
 
+    const dayKey = `${r.ts.getFullYear()}-${String(r.ts.getMonth()+1).padStart(2,'0')}-${String(r.ts.getDate()).padStart(2,'0')}`;
+    if (!byDay.has(dayKey)) byDay.set(dayKey, mkAgg());
+    addToAgg(byDay.get(dayKey), r);
+
     const convKey = `${r.convId}::${r.convName}`;
     if (!byConv.has(convKey)) byConv.set(convKey, { ...mkAgg(), name: r.convName });
     addToAgg(byConv.get(convKey), r);
   }
 
-  return { cumulative, byModel, byMonth, byWeek, byConv };
+  return { cumulative, byModel, byMonth, byWeek, byDay, byConv };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1669,6 +1692,8 @@ const tableState = {
   model: { sortCol: 'gwp', sortDir: 'desc' },
   month: { sortCol: 'date', sortDir: 'desc' },
   week:  { sortCol: 'date', sortDir: 'desc' },
+  monthExpanded: new Set(),
+  weekExpanded: new Set(),
   conv:  { sortCol: 'gwp',  sortDir: 'desc', page: 0, pageSize: 20 },
 };
 
@@ -1760,6 +1785,87 @@ function renderModelTable(aggData) {
   updateSortHeaders('model-table', sortCol, sortDir);
 }
 
+// Returns a Map of byDay entries that belong to a given month or week parent.
+function getChildDayMap(parentKey, byDay, parentType) {
+  const filtered = new Map();
+  for (const [key, agg] of byDay) {
+    const matches = parentType === 'month'
+      ? key.startsWith(parentKey + '-')
+      : getISOWeek(new Date(key + 'T12:00:00')) === parentKey;
+    if (matches) filtered.set(key, agg);
+  }
+  return filtered;
+}
+
+// Builds a table row for a parent (month/week) or child (day) entry.
+function buildAggRow(r, isChild) {
+  const e = fmtEnergy(r.energy, r.energyLo, r.energyHi);
+  const g = fmtGWP(r.gwp, r.gwpLo, r.gwpHi);
+  const w = fmtWater(r.water, r.waterLo, r.waterHi);
+  const tr = document.createElement('tr');
+  const icon = isChild ? '' : `<span class="expand-icon">▶</span>`;
+  if (!isChild) tr.className = 'row-parent';
+  else tr.className = 'row-child';
+  tr.innerHTML = `
+    <td class="label" title="${escH(r.name)}">${icon}${escH(r.name)}</td>
+    <td class="num">${r.requests.toLocaleString()}</td>
+    <td class="num">${r.tokens.toLocaleString()}</td>
+    <td class="num">
+      ${e.value} <span style="color:var(--text3)">${e.unit}</span>
+      ${e.rangeStr ? `<div class="range-cell">${escH(e.rangeStr)}</div>` : ''}
+    </td>
+    <td class="num">
+      ${g.value} <span style="color:var(--text3)">${g.unit}</span>
+      ${g.rangeStr ? `<div class="range-cell">${escH(g.rangeStr)}</div>` : ''}
+    </td>
+    <td class="num">
+      ${w.value} <span style="color:var(--text3)">${w.unit}</span>
+      ${w.rangeStr ? `<div class="range-cell">${escH(w.rangeStr)}</div>` : ''}
+    </td>`;
+  return tr;
+}
+
+// Renders an expandable table where each row can be clicked to reveal day sub-rows.
+function renderExpandableTable(tbody, rows, byDay, parentType, expandedSet, rerenderFn) {
+  tbody.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="6" style="text-align:center;color:var(--text3);padding:20px">No data</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+  for (const r of rows) {
+    const parentKey = r.name;
+    const isExpanded = expandedSet.has(parentKey);
+    const childMap = getChildDayMap(parentKey, byDay, parentType);
+    const hasDays = childMap.size > 0;
+
+    const tr = buildAggRow(r, false);
+    if (isExpanded) tr.classList.add('expanded');
+    if (hasDays) {
+      const icon = tr.querySelector('.expand-icon');
+      if (icon && isExpanded) icon.textContent = '▼';
+      tr.addEventListener('click', () => {
+        if (expandedSet.has(parentKey)) expandedSet.delete(parentKey);
+        else expandedSet.add(parentKey);
+        rerenderFn();
+      });
+    } else {
+      // No days to expand; remove icon to signal non-clickable
+      const icon = tr.querySelector('.expand-icon');
+      if (icon) { icon.textContent = ''; tr.style.cursor = 'default'; }
+    }
+    tbody.appendChild(tr);
+
+    if (isExpanded && hasDays) {
+      const childRows = aggToRows(childMap).sort((a, b) => a.name.localeCompare(b.name));
+      for (const cr of childRows) {
+        tbody.appendChild(buildAggRow(cr, true));
+      }
+    }
+  }
+}
+
 function renderMonthTable(aggData) {
   const { sortCol, sortDir } = tableState.month;
   let rows = aggToRows(aggData.byMonth);
@@ -1768,7 +1874,12 @@ function renderMonthTable(aggData) {
   } else {
     rows = sortRows(rows, sortCol, sortDir);
   }
-  renderTableBody(document.querySelector('#month-table tbody'), rows);
+  renderExpandableTable(
+    document.querySelector('#month-table tbody'),
+    rows, aggData.byDay, 'month',
+    tableState.monthExpanded,
+    () => renderMonthTable(lastAggData)
+  );
   updateSortHeaders('month-table', sortCol, sortDir);
 }
 
@@ -1780,7 +1891,12 @@ function renderWeekTable(aggData) {
   } else {
     rows = sortRows(rows, sortCol, sortDir);
   }
-  renderTableBody(document.querySelector('#week-table tbody'), rows);
+  renderExpandableTable(
+    document.querySelector('#week-table tbody'),
+    rows, aggData.byDay, 'week',
+    tableState.weekExpanded,
+    () => renderWeekTable(lastAggData)
+  );
   updateSortHeaders('week-table', sortCol, sortDir);
 }
 
@@ -1937,6 +2053,7 @@ function exportJSON(aggData, cumulative) {
     by_model:  Object.fromEntries([...aggData.byModel].map(([k,v])  => [k, aggToObj(v)])),
     by_month:  Object.fromEntries([...aggData.byMonth].map(([k,v])  => [k, aggToObj(v)])),
     by_week:   Object.fromEntries([...aggData.byWeek].map(([k,v])   => [k, aggToObj(v)])),
+    by_day:    Object.fromEntries([...aggData.byDay].map(([k,v])    => [k, aggToObj(v)])),
     by_conversation: Object.fromEntries([...aggData.byConv].map(([k,v]) => [k.split('::').slice(-1)[0], aggToObj(v)])),
   };
   const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });

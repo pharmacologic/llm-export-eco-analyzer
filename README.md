@@ -1,5 +1,7 @@
 # Claude & ChatGPT Environmental Impact Analyzer
 
+[![GitHub](https://img.shields.io/badge/GitHub-pharmacologic%2Fllm--export--eco--analyzer-181717?logo=github)](https://github.com/pharmacologic/llm-export-eco-analyzer)
+
 Estimate the environmental footprint of your AI conversations. This tool parses conversation exports from Claude.ai or ChatGPT, and also reads Claude Code session files directly from `~/.claude/projects/`. It estimates the energy consumption, CO₂ emissions (GHG), and water usage of every request using [EcoLogits](https://ecologits.ai/).
 
 ## Features
@@ -7,7 +9,7 @@ Estimate the environmental footprint of your AI conversations. This tool parses 
 - **Automatic format detection**: Works with Claude.ai exports, ChatGPT exports, and Claude Code session files
 - **Claude Code support**: Point to a `.jsonl` session file or a project directory — token counts come straight from the API, no estimation needed
 - **Multi-model support**: Automatically detects model metadata from exports, or override with `--model` or `--mix`
-- **Detailed breakdowns**: See environmental impact by model, month, week, and conversation
+- **Detailed breakdowns**: See environmental impact by model, month, week, day, and conversation
 - **Uncertainty ranges**: All metrics include low/high estimates reflecting model architecture uncertainty
 - **Real-world equivalents**: Compare your impact to tangible activities (e.g., km driven, meals, showers)
 - **JSON export**: Save full results for further analysis
@@ -66,7 +68,7 @@ Weights are automatically normalized, so `10:20:30` and `1:2:3` are equivalent.
 python claude_chatgpt_eco_analysis.py conversations.json --output report.json
 ```
 
-The JSON includes per-request details, aggregates by model/month/week/conversation, and timestamps.
+The JSON includes per-request details, aggregates by model/month/week/day/conversation, and timestamps.
 
 ### Adjust Electricity Mix (Regional)
 
@@ -85,6 +87,14 @@ python claude_chatgpt_eco_analysis.py conversations.json --top 50
 ```
 
 (Default is 20)
+
+### Show Daily Breakdown
+
+```bash
+python claude_chatgpt_eco_analysis.py conversations.json --by-day
+```
+
+Prints a per-day table in addition to the weekly/monthly summaries (can be long for large exports).
 
 ### View All Options
 
@@ -123,7 +133,7 @@ Real-world equivalents (midpoint estimates):
    - Energy per token (based on model architecture, latency, inference efficiency)
    - GHG emissions (from energy × electricity mix)
    - Water consumption (from electricity generation)
-5. **Aggregation**: Groups results by model, time period, and conversation
+5. **Aggregation**: Groups results by model, day, week, month, and conversation
 6. **Output**: Displays summary, breakdowns, and optionally saves full JSON report
 
 ## Model References
